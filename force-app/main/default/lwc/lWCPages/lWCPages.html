@@ -1,0 +1,68 @@
+<!--
+  @description       : 
+  @author            : ChangeMeIn@UserSettingsUnder.SFDoc
+  @group             : 
+  @last modified on  : 04-22-2025
+  @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
+-->
+<template>
+    <div class="main_container">
+        <div class="slds-grid slds-gutters main_div">
+            <!-- left side bar -->
+            <div class="slds-col slds-size_3-of-12 left_container">
+                <div class="slds-col slds-size_1-of-1 logo_heading">
+                    <span>LWC Topics</span>
+                </div>
+                <div class="slds-col slds-size_1-of-1 menu_container">
+                    <template for:each={leftMenuOptions} for:item="item">
+                        <div key={item.id} class={item.class}  data-id={item.id} onclick={addActiveClassInLeftMenu}>
+                            <span>{item.label}</span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+            <!-- right side bar -->
+            <div class="slds-col slds-size_9-of-12 right_container">
+                <div class="slds-col slds-size_1-of-1 right_topic_heading">
+                    <span>{leftMenuInnerText}</span>
+                </div>
+                <div class="slds-col slds-size_1-of-1 work_space">
+                    <template if:true={isVisibleTab0}>
+                        <c-home-cmp></c-home-cmp>
+                    </template>
+                    <template if:true={isVisibleTab1}>
+                        <c-simple-lwc-cmp></c-simple-lwc-cmp>
+                    </template>
+                    <template if:true={isVisibleTab2}>
+                        <div class="slds-col slds-size_1-of-1">
+                            <c-parent-component></c-parent-component>
+                        </div>
+                    </template>
+                    <template if:true={isVisibleTab3}>
+                        <c-l-w-c-parent></c-l-w-c-parent>
+                    </template>
+                    <template if:true={isVisibleTab4}>
+                        <c-l-w-c-hooks></c-l-w-c-hooks>
+                    </template>
+                    
+                    <template if:true={isVisibleTab5}>
+                        <c-decorators></c-decorators>
+                    </template>
+                    
+                    <template if:true={isVisibleTab6}>
+                        <c-data-binding></c-data-binding>
+                    </template>                  
+                    
+                    <template if:true={isVisibleTab7}>
+                        <c-event-handing></c-event-handing>
+                    </template>
+                    <template if:true={isVisibleTab8}>
+                        <c-location-display></c-location-display>
+                    </template>
+                </div>
+            </div>
+        </div>
+       
+    </div>
+
+</template>

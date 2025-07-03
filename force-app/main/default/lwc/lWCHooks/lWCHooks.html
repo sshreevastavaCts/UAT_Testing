@@ -1,0 +1,104 @@
+<!--
+  @description       : 
+  @author            : ChangeMeIn@UserSettingsUnder.SFDoc
+  @group             : 
+  @last modified on  : 04-09-2025
+  @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
+-->
+
+<template>
+    <div class="slds-grid slds-wrap slds-gutters border">       
+        <div class="slds-col slds-size_12-of-12">
+            <lightning-card title="LWC Life Cycle Hooks" icon-name="custom:custom63">                
+                <div class="slds-m-around_medium">
+                    <h2><b>LWC Hooks</b></h2>
+                    <p>
+                        Lightning Web Components (LWC), lifecycle hooks are special methods that get called at specific points in a component’s life—like when it's created, inserted into the DOM, or removed. These hooks help you run custom code during key moments in your component’s existence.
+                    </p>
+                    <div class="slds-m-around_medium">&nbsp;</div>
+                    <table class="slds-table slds-table_bordered slds-border_left slds-border_right">
+                        <thead>
+                            <tr>
+                                <th><b>Hook</b></th>
+                                <th><b>When It’s Called</b></th>
+                                <th><b>Use Case Example</b></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template for:each={lwcItemList} for:item="item">
+                                <tr key={item.id}>
+                                    <td>{item.feature}</td>
+                                    <td>{item.lwc}</td>
+                                    <td>{item.aura}</td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+
+                    <div class="slds-m-around_medium">&nbsp;</div>
+                    <h3><b>When to Use What?</b></h3>
+                    <ol class="slds-list_ordered">
+                        <li>Use LWC for new development—it's faster, modern, and aligns with web standards.</li>
+                        <li>se Aura when maintaining or extending legacy apps/components built in Aura.</li>
+                    </ol>
+
+                    <h2><b>constructor()</b></h2>
+                    <ol class="slds-list_ordered">
+                        <li>Called once when the component instance is created.</li>
+                        <li>Good for initializing state and private properties.</li>
+                        <li>Avoid accessing the DOM here (not available yet).</li>
+                        <li>use super() every time when we use this hooks.</li>
+                    </ol>
+                    <div class="slds-m-around_medium">&nbsp;</div>
+
+                    <h2><b>connectedCallback()</b></h2>
+                    <ol class="slds-list_ordered">
+                        <li>Called when inserted into the DOM.</li>
+                        <li>Commonly used for:
+                            <ul class="slds-list_dotted">
+                                <li>Fetching data from APIs.</li>
+                                <li>Setting up event listeners.</li>
+                                <li>Starting timers or intervals.</li>
+                            </ul>
+                        </li>
+                        <li>connectedCallback ().</li>
+                    </ol>
+                    <div class="slds-m-around_medium">&nbsp;</div>
+
+                    <h2><b>renderedCallback()</b></h2>
+                    <ol class="slds-list_ordered">
+                        <li>Called after each render (initial and subsequent re-renders).</li>
+                        <li>You can manipulate the DOM here (if necessary).</li>
+                        <li>Be careful not to cause infinite loops!</li>
+                        <li>renderedCallback ().</li>
+                    </ol>
+                    <div class="slds-m-around_medium">&nbsp;</div>
+
+                    <h2><b>disconnectedCallback()</b></h2>
+                    <ol class="slds-list_ordered">
+                        <li>Called when the component is removed from the DOM.</li>
+                        <li>Use it to clean up (like clearing intervals, removing event listeners).</li>
+                        <li>disconnectedCallback ().</li>
+                    </ol>
+                    <div class="slds-m-around_medium">&nbsp;</div>
+                    <h2><b>errorCallback(error, stack)</b></h2>
+                    <ol class="slds-list_ordered">
+                        <li>Called when a child component throws an error.</li>
+                        <li>You can log the error or display a fallback UI.</li>
+                        <li>errorCallback(error, stack).</li>
+                    </ol>
+                    <div class="slds-m-around_medium">&nbsp;</div>
+                    <h2><b>Lifecycle Flow (in order)</b></h2>
+                    <ol class="slds-list_ordered">
+                        <li>constructor()</li>
+                        <li>connectedCallback()</li>
+                        <li>renderedCallback() ← may run multiple times</li>
+                        <li>disconnectedCallback()</li>
+                    </ol>
+                    <div class="slds-m-around_medium">&nbsp;</div>
+                </div>
+            </lightning-card>
+        </div>
+        
+    </div>
+</template>

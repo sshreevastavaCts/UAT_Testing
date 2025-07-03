@@ -1,0 +1,47 @@
+<!--
+  @description       : 
+  @author            : ChangeMeIn@UserSettingsUnder.SFDoc
+  @group             : 
+  @last modified on  : 06-23-2025
+  @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
+-->
+<template>
+    <div class="header-row">
+        <div class="header-section">
+            <span class="label">Timer:</span>
+            <span>{timerDisplay}</span>
+        </div>
+        <div class="header-section">
+            <span class="label">Set No.:</span>
+            <span>{setNo}</span>
+        </div>
+        <div class="header-section">
+            <span class="label">User:</span>
+            <span>{userName}</span>
+        </div>
+        <div class="header-section">
+            <span class="label">Test:</span>
+            <span>{testName}</span>
+        </div>
+        <div class="header-section">
+            <span class="label">Date & Time:</span>
+            <span>{dateTime}</span>
+        </div>
+    </div>
+    <div class="question-section">
+        <h2>{question}</h2>
+    </div>
+    <div class="options-section">
+        <template for:each={options} for:item="option">
+            <div key={option.value} class="option-row">
+                <input type="radio" name="mcq" value={option.value}
+                       onchange={handleOptionChange} id={option.value}/>
+                <label for={option.value}>{option.label}</label>
+            </div>
+        </template>
+    </div>
+    <div class="actions-row">
+        <button onclick={handleBack}>Back</button>
+        <button onclick={handleNext}>Next</button>
+    </div>
+</template>

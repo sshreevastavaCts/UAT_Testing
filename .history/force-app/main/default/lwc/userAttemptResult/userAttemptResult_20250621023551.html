@@ -1,0 +1,31 @@
+<!--
+  @description       : 
+  @author            : ChangeMeIn@UserSettingsUnder.SFDoc
+  @group             : 
+  @last modified on  : 06-21-2025
+  @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
+-->
+<template>
+    <template if:true={showModal}>
+        <section class="modal">
+            <div class="modal-content">
+                <h2>{question}</h2>
+                <div class="options">
+                    <template for:each={options} for:item="option">
+                        <div key={option.value}>
+                            <input type="radio" name="mcq" value={option.value} 
+                                   checked={option.value === selectedOption}
+                                   onchange={handleOptionChange}/>
+                            <label>{option.label}</label>
+                        </div>
+                    </template>
+                </div>
+                <div class="actions">
+                    <button onclick={handleBack}>Back</button>
+                    <button onclick={handleNext}>Next</button>
+                </div>
+            </div>
+        </section>
+        <div class="modal-backdrop"></div>
+    </template>
+</template>

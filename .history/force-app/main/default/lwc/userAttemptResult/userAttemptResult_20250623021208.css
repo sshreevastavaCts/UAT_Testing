@@ -1,0 +1,33 @@
+.header-row {
+    display: flex;
+    justify-content: space-between;
+    background: #f4f6f9;
+    padding: 1rem;
+    border-radius: 6px;
+    margin-bottom: 1.5rem;
+}
+.header-section {
+    flex: 1;
+    text-align: center;
+}
+.label {
+    font-weight: bold;
+    margin-right: 0.5rem;
+}
+.question-section {
+    margin-bottom: 1.5rem;
+}
+.options-section {
+    margin-bottom: 1.5rem;
+}
+.option-row {
+    margin-bottom: 0.75rem;
+}
+.actions-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+}
+.header-section {
+    flex: none !important;
+}

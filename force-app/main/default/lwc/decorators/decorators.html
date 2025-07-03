@@ -1,0 +1,71 @@
+<!--
+  @description       : 
+  @author            : ChangeMeIn@UserSettingsUnder.SFDoc
+  @group             : 
+  @last modified on  : 04-10-2025
+  @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
+-->
+<template>
+    <div class="slds-grid slds-wrap slds-gutters border">       
+        <div class="slds-col slds-size_12-of-12">
+            <lightning-card title="LWC Decorators" icon-name="custom:custom63">                
+                <div class="slds-m-around_medium">
+                    <h2><b>LWC Decorators</b></h2>
+                    <p>
+                        In LWC, decorators are special annotations used to tell the framework how to treat specific properties or methods. They are used to enhance the functionality of components and provide a way to manage data binding, lifecycle hooks, and more. 
+                    </p>
+                    <div class="slds-m-around_medium"></div>
+                   
+                    <table class="slds-table slds-table_bordered slds-border_left slds-border_right">
+                        <thead>
+                            <tr>
+                                <th><b>Decorator</b></th>
+                                <th><b>Purpose</b></th>
+                                <th><b>Typical Use Case</b></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template for:each={keyDifferences} for:item="item">
+                                <tr key={item.id}>
+                                    <td>{item.feature}</td>
+                                    <td>{item.lwc}</td>
+                                    <td>{item.aura}</td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>@api – Public Property/Method</b></h3>
+                    <ol class="slds-list_ordered">
+                        <li>Use @api to expose properties or methods so they can be set from a parent component or used in App Builder.</li>
+                    </ol>
+
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>@track – Reactive Private State</b></h3>
+                    <ol class="slds-list_ordered">
+                        <li>Marks a property as reactive, meaning changes to it trigger re-render.</li>
+                        <li>Use @track for complex objects or arrays to ensure the component re-renders when their properties change.</li>  
+                        <li>In LWC, all properties are reactive by default, but @track is still useful for deep tracking of objects and arrays.</li>
+                        <li>@track is not needed for primitives like strings, numbers, booleans, etc.</li>
+                        <li>In Aura, @track is used to make properties reactive, but in LWC, all properties are reactive by default.</li>
+                        <li>Note: Now primitive properties are reactive by default, so @track is mostly used for objects/arrays when modifying them in-place.</li>
+                        <li>Note: You can also use @track on fields of type object or array and they will be tracked as needed.</li>
+                        <li>When to use @track: You’re modifying a nested value in an object or array.</li>
+                    </ol>
+
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>@wire – Reactive Data from Apex or Services</b></h3>
+                    <ol class="slds-list_ordered">
+                        <li>Used to connect to Apex methods or Lightning Data Service (LDS) reactively. The component automatically gets updated if the wired data changes.</li>
+                        <li>Use @wire to fetch data from an Apex method or a service and bind it to a property.</li>
+                        <li>It can also be used to call a function that returns a promise.</li>
+                        <li>In Aura, @wire is used to bind data to a component, but in LWC, it is more powerful and can be used with any JavaScript function.</li>
+                        <li>import getAccounts from '@salesforce/apex/AccountController.getAccounts';</li>
+                    </ol>
+                </div>
+            </lightning-card>
+        </div>
+        
+    </div>
+</template>

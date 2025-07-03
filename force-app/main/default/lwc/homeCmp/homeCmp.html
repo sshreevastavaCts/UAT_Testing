@@ -1,0 +1,72 @@
+<!--
+  @description       : 
+  @author            : ChangeMeIn@UserSettingsUnder.SFDoc
+  @group             : 
+  @last modified on  : 04-09-2025
+  @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
+-->
+<template>
+    <div class="slds-grid slds-wrap slds-gutters border">       
+        <div class="slds-col slds-size_12-of-12">
+            <lightning-card title="LWC Inrtoduction" icon-name="custom:custom63">                
+                <div class="slds-m-around_medium">
+                    <h2><b>What is LWC and how it differs from Aura</b></h2>
+                    <p>
+                        Lightning Web Components (LWC) and Aura are both frameworks provided by Salesforce for building components in the Lightning Experience, but they differ significantly in architecture, performance, and how they use web standards.
+                    </p>
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>What is LWC?</b></h3>
+                    <p>
+                        Lightning Web Components (LWC) is a modern JavaScript framework introduced by Salesforce in 2019. that leverages the latest web standards to build reusable components. It is designed to work seamlessly with the Lightning Platform and provides a more efficient way to create user interfaces.
+                    </p>
+                    <ol class="slds-list_ordered">
+                        <template for:each={lwcItemList} for:item="item">
+                            <li key={item.id}>{item.name}</li>
+                        </template>
+                    </ol>
+
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>What is Aura?</b></h3>
+                    <p>
+                        Aura Components are the older framework, introduced before LWC. They are built using a custom Salesforce framework with their own component model, which doesn’t rely on standard web components.
+                    </p>
+                    <ol class="slds-list_ordered">
+                        <template for:each={aurItemList} for:item="item">
+                            <li key={item.id}>{item.name}</li>
+                        </template>
+                    </ol>
+
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>Key Differences Between LWC and Aura</b></h3>
+                   
+                    <table class="slds-table slds-table_bordered slds-border_left slds-border_right">
+                        <thead>
+                            <tr>
+                                <th><b>Aspect</b></th>
+                                <th><b>LWC</b></th>
+                                <th><b>Aura</b></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template for:each={keyDifferences} for:item="item">
+                                <tr key={item.id}>
+                                    <td>{item.feature}</td>
+                                    <td>{item.lwc}</td>
+                                    <td>{item.aura}</td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>When to Use What?</b></h3>
+                    <ol class="slds-list_ordered">
+                        <li>Use LWC for new development—it's faster, modern, and aligns with web standards.</li>
+                        <li>se Aura when maintaining or extending legacy apps/components built in Aura.</li>
+                    </ol>
+                </div>
+            </lightning-card>
+        </div>
+        
+    </div>
+</template>

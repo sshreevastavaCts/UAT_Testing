@@ -1,0 +1,53 @@
+<!--
+  @description       : 
+  @author            : ChangeMeIn@UserSettingsUnder.SFDoc
+  @group             : 
+  @last modified on  : 06-23-2025
+  @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
+-->
+<template>
+    <div class="header-row">
+        <div class="header-section">
+            <span class="label">Timer:</span>
+            <span>{timerDisplay}</span>
+        </div>
+        <div class="header-section">
+            <span class="label">Set No.:</span>
+            <span>{setNo}</span>
+        </div>
+        <div class="header-section">
+            <span class="label">User:</span>
+            <span>{userName}</span>
+        </div>
+        <div class="header-section">
+            <span class="label">Test:</span>
+            <span>{testName}</span>
+        </div>
+        <div class="header-section">
+            <span class="label">Date & Time:</span>
+            <span>{dateTime}</span>
+        </div>
+    </div>
+    
+
+    <div class="quiz-container">
+        <div class="question-row">
+            <span class="question-number">1.</span>
+            <span class="question-text">{question}</span>
+        </div>
+        <div class="options-list">
+            <template for:each={options} for:item="option">
+                <label key={option.value} class="option-label">
+                    <input type="radio" name="mcq" value={option.value}
+                        onchange={handleOptionChange}/>
+                    <span class="custom-radio"></span>
+                    <span class="option-flag">{option.label}</span>
+                </label>
+            </template>
+        </div>
+        <div class="actions-row">
+            <span class="press-enter">Press <b>ENTER</b></span>
+            <button class="next-btn" onclick={handleNext}>NEXT</button>
+        </div>
+    </div>
+</template>

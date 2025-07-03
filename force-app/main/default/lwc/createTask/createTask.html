@@ -1,0 +1,64 @@
+<!--
+  @description       : 
+  @author            : ChangeMeIn@UserSettingsUnder.SFDoc
+  @group             : 
+  @last modified on  : 05-21-2025
+  @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
+-->
+<template>
+
+    
+   <div class="slds-modal__content slds-p-around_medium">
+                    <lightning-card title="Create Task">
+                        <div class="slds-p-around_medium">
+                            <lightning-combobox
+                                name="subject"
+                                label="Subject"
+                                value={subject}
+                                options={subjectOptions}
+                                onchange={handleSubjectChange}>
+                            </lightning-combobox>
+
+                            <lightning-combobox
+                                name="Status"
+                                label="Status"
+                                value={status}
+                                options={statusOptions}
+                                onchange={handleStatusChange}>
+                            </lightning-combobox>
+
+                            <lightning-combobox
+                                name="Priority"
+                                label="Priority"
+                                value={priority}
+                                options={priorityOptions}
+                                onchange={handlePriorityChange}>
+                            </lightning-combobox>
+
+                            <lightning-combobox
+                                name="TaskType"
+                                label="Task Type"
+                                value={taskType}
+                                options={taskTypeOptions}
+                                onchange={handleTaskTypeChange}>
+                            </lightning-combobox>
+
+
+                            <lightning-dual-listbox
+                                name="languages"
+                                label="Select Languages"
+                                source-label="Available"
+                                selected-label="Selected"
+                                options={lanOptions}
+                                value={selectedValues}
+                                onchange={handleLanChange}>
+                            </lightning-dual-listbox>
+                        </div>
+                    </lightning-card>
+                </div>
+
+
+
+
+    
+</template>

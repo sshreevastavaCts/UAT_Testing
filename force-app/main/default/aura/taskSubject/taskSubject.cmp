@@ -1,0 +1,13 @@
+<aura:component implements="force:appHostable,flexipage:availableForAllPageTypes,flexipage:availableForRecordHome,force:hasRecordId,force:lightningQuickAction" 
+                access="global" controller="AccountApi">
+	<aura:attribute name="recordTypeId" type="String" />
+    <aura:attribute name="subjectOptions" type="List" />
+
+    <aura:handler name="init" value="{! this }" action="{! c.doInit }" />
+
+    <lightning:select label="Subject" name="subject">
+        <aura:iteration items="{! v.subjectOptions }" var="subject">
+            <option value="{! subject }">{! subject }</option>
+        </aura:iteration>
+    </lightning:select>
+</aura:component>

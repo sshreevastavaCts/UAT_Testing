@@ -1,0 +1,82 @@
+<!--
+  @description       : 
+  @author            : ChangeMeIn@UserSettingsUnder.SFDoc
+  @group             : 
+  @last modified on  : 04-08-2025
+  @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
+-->
+<template>
+    <div class="slds-grid slds-wrap slds-gutters border">       
+        <div class="slds-col slds-size_6-of-12">
+            <lightning-card title="Pass Input to Child">
+                <div class="slds-m-around_medium">
+                    <lightning-input 
+                        label="Enter Text" 
+                        value={userInput} 
+                        onchange={handleInputChange}>
+                    </lightning-input>
+                </div>
+                <div class="slds-m-around_medium">
+                    <h2><b>How it Works</b></h2>
+                    <ol class="slds-list_ordered">
+                        <template for:each={itemList} for:item="item">
+                            <li key={item.id}>{item.name}</li>
+                        </template>
+                    </ol>
+                </div>
+            </lightning-card>
+        </div>
+        <div class="slds-col slds-size_6-of-12">
+            <c-child-component input-value={userInput}></c-child-component>
+        </div>
+    </div>
+
+    <div class="slds-grid slds-wrap slds-gutters border">       
+        <div class="slds-col slds-size_6-of-12">
+            <lightning-card title="Pass Multiple Input to Child">
+                <div class="slds-col slds-size_1-of-1">
+                    <lightning-input 
+                        label="First Name" 
+                        value={fname} 
+                        onchange={handleFirstNameChange} 
+                        placeholder="Enter first name" required>
+                    </lightning-input>
+                </div>
+                <div class="slds-col slds-size_1-of-1">
+                    <lightning-input 
+                        label="Last Name" 
+                        value={lname} 
+                        onchange={handleLastNameChange} 
+                        placeholder="Enter last name" required>
+                    </lightning-input>
+                </div>
+                <div class="slds-col slds-size_1-of-1">
+                    <lightning-combobox
+                        label="Parent Account"
+                        value={selectedParentId}
+                        options={accountOptions}
+                        onchange={handleParentAccountChange}
+                        placeholder="Select a Parent Account" required>
+                    </lightning-combobox>
+                </div>
+                <template if:true={errorMessage}>
+                    <div class="slds-text-color_error">{errorMessage}</div>
+                </template>
+                <div class="slds-col slds-size_1-of-1 slds-text-align_center">
+                    <div class="slds-m-around_medium">
+                        <lightning-button variant="brand" label="Pass Pram to Child for Save" title="Primary action" onclick={passToChild} class="slds-m-left_x-small"></lightning-button>
+                    </div>
+                </div>
+            </lightning-card>
+        </div>
+        <div class="slds-col slds-size_6-of-12">
+            <!-- we can pass data by 2 way -->
+            <!-- 1. pass individual data like: <c-child-cmp-for-read-inputs fname={fname} lname={lname} aname={aname}></c-child-cmp-for-read-inputs> and read in child cmp by api decoreaters-->
+            <!-- 2. pass data in object format and read in object form -->
+            <p><strong>Name:</strong> {fname}</p>
+            <p><strong>Email:</strong> {contactData.lastName}</p>
+            <p><strong>Phone:</strong> {contactData.parentAccount}</p>
+            <c-child-cmp-for-read-inputs onsenddata={handleChildData}></c-child-cmp-for-read-inputs>
+        </div>
+    </div>
+</template>

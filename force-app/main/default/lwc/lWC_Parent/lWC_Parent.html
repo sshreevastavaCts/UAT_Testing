@@ -1,0 +1,38 @@
+<!--
+  @description       : 
+  @author            : ChangeMeIn@UserSettingsUnder.SFDoc
+  @group             : 
+  @last modified on  : 11-26-2024
+  @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
+-->
+<template>
+    <div class="slds-grid slds-gutters info_bar">
+        <div class="slds-col">
+            <span>Account Info</span>
+        </div>
+    </div>
+    <c-lwc_child_cmp1 account-data={account}></c-lwc_child_cmp1>
+    <div class="slds-grid slds-gutters info_bar">
+        <div class="slds-col">
+            <span>Address Info</span>
+        </div>
+    </div>
+    <c-lwc_child_cmp2></c-lwc_child_cmp2>
+
+    <div class="slds-grid slds-gutters info_bar">
+        <div class="slds-col">
+            <span>Additional Info</span>
+        </div>
+    </div>
+    
+    <c-lwc_child_cmp3></c-lwc_child_cmp3>
+
+    <div class="slds-grid slds-gutters button_info_bar">
+        <div class="slds-col">
+            <lightning-button label="Cancel" title="Non-primary action" onclick={handleClick} class="slds-m-left_x-small"></lightning-button>
+        
+            <lightning-button variant="brand" label="Save" title="Primary action" onclick={handleClickSave} class="slds-m-left_x-small"></lightning-button>
+
+        </div>
+    </div>
+</template>

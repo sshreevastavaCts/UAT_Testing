@@ -1,0 +1,63 @@
+<!--
+  @description       : 
+  @author            : ChangeMeIn@UserSettingsUnder.SFDoc
+  @group             : 
+  @last modified on  : 11-27-2024
+  @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
+-->
+<template>
+    <div class="slds-grid slds-gutters">
+        <div class="slds-col">
+            <div class="slds-m-top_medium slds-m-bottom_x-small">
+                <div class="slds-p-bottom_medium">
+                    <lightning-input type="text" label="Account Name" data-field="accName" onchange={handleAccountName}></lightning-input>
+                </div>
+                <div class="slds-p-bottom_medium">
+                    <lightning-combobox
+                        name="Parent_Account"
+                        label="Parent Account"
+                        value={pAccountVal}
+                        placeholder="Select Account"
+                        options={Parent_Account_Options}
+                        data-field="parAccName"
+                        onchange={handleParentAccount} ></lightning-combobox>
+                </div>
+                <div class="slds-p-bottom_medium">
+                    <lightning-input type="text" label="Account Number" onchange={handleAccountNo}></lightning-input>
+                </div>
+                <div class="slds-p-bottom_medium">
+                    <lightning-input type="text" label="Account Site" onchange={handleAccountSite}></lightning-input>
+                </div>
+            </div>
+        </div>
+        <div class="slds-col">
+            <div class="slds-m-top_medium slds-m-bottom_x-small">
+                <div class="slds-p-bottom_medium">
+                    <lightning-combobox
+                        name="Rating"
+                        label="Rating"
+                        value={rating_value}
+                        placeholder="Select Rating"
+                        options={rating_options}
+                        onchange={handleRating} ></lightning-combobox>
+                </div>
+                <div class="slds-p-bottom_medium">
+                    <lightning-combobox
+                        name="ownership"
+                        label="Ownership"
+                        value={ownership_value}
+                        placeholder="Select Ownership"
+                        options={ownership_options}
+                        onchange={handleOwnership} ></lightning-combobox>
+                </div>
+                <div class="slds-p-bottom_medium">
+                    <lightning-input type="text" label="Employees" onchange={handleEmployees}></lightning-input>
+                </div>
+                <div class="slds-p-bottom_medium">
+                    <lightning-input type="text" label="SIC Code" onchange={handleSICCode}></lightning-input>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+</template>

@@ -1,0 +1,64 @@
+<!--
+  @description       : 
+  @author            : ChangeMeIn@UserSettingsUnder.SFDoc
+  @group             : 
+  @last modified on  : 11-26-2024
+  @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
+-->
+<template>
+    <div class="slds-grid slds-gutters">
+        <div class="slds-col">
+            <div class="slds-m-top_medium slds-m-bottom_x-small">
+                <div class="slds-p-bottom_medium">
+                    <lightning-combobox
+                        name="Customer_Priority"
+                        label="Customer Priority"
+                        value={customer_priority_value}
+                        placeholder="Select Customer Priority"
+                        options={Customer_Priority_Options}
+                        onchange={handleCustomerPriority} ></lightning-combobox>
+                </div>            
+                <div class="slds-p-bottom_medium">
+                    <lightning-input type="date" label="SLA Expiration Date" onchange={handleSlaExp}></lightning-input>
+                </div>           
+                <div class="slds-p-bottom_medium">
+                    <lightning-input type="text" label="Number of Locations" onchange={handleLocation}></lightning-input>
+                </div>            
+                <div class="slds-p-bottom_medium">
+                    <lightning-combobox
+                        name="Active"
+                        label="Active"
+                        value={active_value}
+                        placeholder="Select Active"
+                        options={Active_Options}
+                        onchange={handleActive} ></lightning-combobox>
+                </div>
+            </div>
+        </div>
+        <div class="slds-col">
+            <div class="slds-m-top_medium slds-m-bottom_x-small">
+                <div class="slds-p-bottom_medium">
+                    <lightning-combobox
+                        name="SLA"
+                        label="SLA"
+                        value={SLA_value}
+                        placeholder="Select SLA"
+                        options={SLA_Options}
+                        onchange={handleSLA} ></lightning-combobox>
+                </div>
+                <div class="slds-p-bottom_medium">
+                    <lightning-input type="text" label="SLA Serial Number" onchange={handleSlaSerialNo}></lightning-input>
+                </div>
+                <div class="slds-p-bottom_medium">
+                    <lightning-combobox
+                        name="Upsell_Opportunity"
+                        label="Upsell Opportunity"
+                        value={Upsell_Opportunity_value}
+                        placeholder="Select Upsell Opportunity"
+                        options={Upsell_Opportunity_Options}
+                        onchange={handleUpsellOpportunity} ></lightning-combobox>
+                </div>
+            </div>
+        </div>
+    </div>
+</template>

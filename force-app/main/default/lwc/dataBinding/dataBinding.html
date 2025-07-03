@@ -1,0 +1,178 @@
+<!--
+  @description       : 
+  @author            : ChangeMeIn@UserSettingsUnder.SFDoc
+  @group             : 
+  @last modified on  : 04-11-2025
+  @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
+-->
+<template>
+    <div class="slds-grid slds-wrap slds-gutters border">       
+        <div class="slds-col slds-size_12-of-12">
+            <lightning-card title="LWC Data Binding" icon-name="custom:custom63">                
+                <div class="slds-m-around_medium">
+                    <h2><b>LWC Data Binding</b></h2>
+                    <p>
+                        Data binding is the connection between JavaScript data and HTML UI, allowing your UI to automatically reflect changes in data and vice versa.
+                        In LWC, data binding is achieved through properties and methods, which can be bound to HTML elements using curly braces.
+                        This allows for a reactive programming model, where changes to data automatically update the UI.
+                        There are two types of data binding in LWC: one-way and two-way.
+                    </p>
+                    <ul>
+                        <li><b>One-way data binding</b>: Data flows in one direction, from the component to the UI. Changes in the component's data automatically update the UI, but not vice versa.</li>
+                        <li><b>Two-way data binding</b>: Data flows in both directions, allowing changes in the UI to update the component's data and vice versa.</li>
+                    </ul>
+                    <div class="slds-m-around_medium"></div>
+                   
+                    <h2><b>One-Way Data Binding (JS → HTML)</b></h2>
+                    <p>
+                        This is the most common form — when a value in JavaScript is displayed in HTML.
+                    </p>
+                    <p>
+                        //greeting = 'Hello, World!';
+                    </p>
+                    <p>If 'greeting' changes in JS, the UI updates automatically.</p>
+                    <p>You can use getter to return computed values too.</p>
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>Two-Way Data Binding (HTML → JS)</b></h3>
+                    <p>Used mainly in form elements to capture user input and update JS variables.</p>
+                    
+
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>Template Expressions</b></h3>
+                    <p>You can only use:</p>
+                    <ol class="slds-list_ordered">
+                        <li>'propertyName' (no JS logic inside templates!)</li>
+                        <li>No loops, no conditionals, just straight property access.</li>  
+                    </ol>
+
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>Reactivity</b></h3>
+                    <p>To ensure the UI updates when data changes:</p>
+                    <ol class="slds-list_ordered">
+                        <li>Use primitive types (e.g., string, number) as is.</li>
+                        <li>For objects/arrays, use @track or make a new copy to trigger reactivity.</li>
+                    </ol>
+
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>Getters for Dynamic Binding</b></h3>
+                    <p>get fullName() method and retuen the values</p>
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>Binding Limitations</b></h3>
+                    <ol class="slds-list_ordered">
+                        <li>Can't bind to functions or complex expressions directly in HTML.</li>
+                        <li>Always bind to a property (use getters if needed).</li>
+                    </ol>
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>Best Practices</b></h3>
+                    <ol class="slds-list_ordered">
+                        <li>Use one-way data binding for most cases.</li>
+                        <li>Use two-way data binding only when necessary (e.g., forms).</li>
+                        <li>Keep your data model simple and reactive.</li>
+                        <li>Use getters for computed properties.</li>
+                        <li>Use @track for complex objects/arrays to ensure reactivity.</li>
+                        <li>Always bind to properties, not functions or complex expressions.</li>
+                        <li>Use template expressions for simple data binding.</li>
+                        <li>Use getters for dynamic binding.</li>
+                        <li>Be mindful of reactivity limitations with objects/arrays.</li>
+                        <li>Test your data binding thoroughly to ensure it works as expected.</li>
+                        <li>Use the Lightning Design System (SLDS) for consistent UI.</li>
+                        <li>Keep your components modular and reusable.</li>
+                        <li>Use events to communicate between components.</li>
+                        <li>Use the @api decorator to expose properties and methods to parent components.</li>
+                        <li>Use the @wire decorator to fetch data from Salesforce.</li>
+                        <li>Use the @track decorator to track changes to properties.</li>
+                    </ol>
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>Conclusion</b></h3>
+                    <p>Data binding in LWC is a powerful feature that allows you to create dynamic and responsive user interfaces. By understanding the different types of data binding and how to use them effectively, you can build robust and maintainable components.</p>
+
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>What are Getters and Setters?</b></h3>
+                    <p>Getter (get): Returns a computed value — often used in the template (HTML) to display dynamic data.</p>
+                    <p>Setter (set): Allows you to run logic when a property is assigned — useful for validation or updating dependent data.</p>
+                    <p>Getters and setters are special methods in JavaScript that allow you to define how properties of an object are accessed and modified. They provide a way to encapsulate the internal state of an object and control how it is accessed or modified.</p>
+                    <p>Getters are used to retrieve the value of a property, while setters are used to set the value of a property. They can be defined using the 'get' and 'set' keywords, respectively.</p>
+                    <p>In LWC, getters and setters are often used to create computed properties or to perform validation when setting a property value.</p>
+                    <p>For example, you can use a getter to return a formatted version of a property value, or you can use a setter to validate the value before assigning it to a property.</p>
+                    <p>Getters and setters are a powerful feature of JavaScript that can help you create more maintainable and reusable code.</p>
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>Best Practices for Getters and Setters</b></h3>
+                    <ol class="slds-list_ordered">
+                        <li>Use getters to create computed properties that depend on other properties.</li> 
+                        <li>Use setters to perform validation before assigning a property value.</li>
+                        <li> Keep your getters and setters simple and focused on a single task.</li>
+                        <li>Use descriptive names for your getters and setters to make it clear what they do.</li>
+                        <li>Use getters and setters to encapsulate the internal state of an object.</li>
+                        <li>Use getters and setters to create a clear and consistent API for your components.</li>
+                        <li>Use getters and setters to create a clear separation between the internal state of an object and its public API.</li>
+                    </ol>
+
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>Example </b></h3>   
+                    <p>In the example below, we have a simple LWC component that uses getters and setters to manage a person's name.</p>
+                    <p>We have a property called 'fullName' that is a combination of the first and last name. We also have a setter for 'fullName' that splits the name into first and last names when it is set.</p>
+                    <p>We also have a getter for 'fullName' that combines the first and last names into a single string when it is accessed.</p>
+                    <p>In this example, we are using getters and setters to create a computed property that is easy to use and understand.</p>
+                    <p>We are also using getters and setters to encapsulate the internal state of the component and provide a clear API for accessing and modifying the name.</p>
+                    
+                    <p>in JS file: get fullName() method. inside the method we can add like 'return "$ '{this.firstName{ ${this.lastName{'</p>
+                    <p>in HTML file: Full Name: {fullName{</p>
+                    <p>fullName isn't a real property — it's computed dynamically when called.</p>   
+
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>Setter Example – To React to Property Changes </b></h3>   
+                    <p>Use Case: React when @api property is set from parent</p>
+                    <p>in JS: set recordId(value) { \n this.internalValue = `Received Record ID: ${value{`;' \n {</p>
+                    <p>in HTML: <b>Record ID:</b> {internalValue{</p>
+                    <p>When the parent sets recordId, the setter runs — good for initializing logic when a property is received.</p>
+
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>When to Use What</b></h3>
+
+                    <table class="slds-table slds-table_bordered slds-border_left slds-border_right">
+                        <thead>
+                            <tr>
+                                <th><b>Use Case</b></th>
+                                <th><b>Use Getter</b></th>
+                                <th><b>Use Setter</b></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template for:each={keyDifferences} for:item="item">
+                                <tr key={item.id}>
+                                    <td>{item.useCase}</td>
+                                    <td>{item.getter}</td>
+                                    <td>{item.setter}</td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>Gotchas</b></h3>
+                    <p>You can't use complex logic (like if/for) in template HTML — so use getters for that.</p>    
+                    <p>Use setter only when needed, because it doesn't get called on internal JS changes, only when the property is set externally (like from a parent).</p>  
+
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b>What are Binding Expressions in LWC?</b></h3>
+                    <p>Binding expressions use curly braces {} to insert dynamic data from the component’s JavaScript into the HTML template.</p>
+
+                    <div class="slds-m-around_medium"></div>
+                    <h3><b> Key Rules for Binding Expressions</b></h3>
+                    <ol class="slds-list_ordered">
+                        <li>Use only property names, no JS logic inside templates.</li>
+                        <li>Use getters for computed values.</li>
+                        <li>Use @track for complex objects/arrays to ensure reactivity.</li>
+                        <li>Use getters for dynamic binding.</li>
+                        <li>Be mindful of reactivity limitations with objects/arrays.</li>
+
+                        <li>Only public properties, tracked properties, or getters can be bound.</li>
+                        <li>You cannot run JavaScript functions or logic directly in the template.</li>
+                        <li>Binding is one-way (JS → HTML) — but can respond to changes using @track or by updating the value</li>
+                    </ol>
+                </div>
+            </lightning-card>
+        </div>
+        
+    </div>
+</template>
