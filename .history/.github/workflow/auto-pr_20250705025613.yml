@@ -1,0 +1,25 @@
+name: Auto PR on Feature Branch Push
+
+on:
+  push:
+    branches:
+      - 'dev-*'   # Triggers on any branch starting with 'feature-'
+
+jobs:
+  create-pull-request:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'Auto PR: Update from feature branch'
+          title: 'Auto PR from ${{ github.ref_name }}'
+          body: |
+            This PR was automatically created from the feature branch ${{ github.ref_name }}.
+          base: prod_env   # Change to your default branch if not 'main'
+          branch: ${{ github.ref_name }}
+          draft: false
