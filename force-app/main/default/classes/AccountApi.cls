@@ -91,5 +91,18 @@ public with sharing class AccountApi {
         return (QR_Answers != null && !QR_Answers.isEmpty()) ? QR_Answers[0].Id : null;
     }
 
-
+    @AuraEnabled(cacheable=true)
+    public static List<user_attempt_result__c> getQuizAnswers(Id quizId) {
+        if (quizId == null) {
+            throw new AuraHandledException('Quiz ID cannot be null.');
+        }
+        
+        List<user_attempt_result__c> quizAnswers = [SELECT Id, Answer_Option__c, Quiz__c, User__c FROM user_attempt_result__c WHERE Quiz__c = :quizId];
+        
+        if (quizAnswers.isEmpty()) {
+            throw new AuraHandledException('No quiz answers found for the provided quiz ID.');
+        }
+        
+        return quizAnswers;
+    }   
 }
