@@ -89,7 +89,7 @@ public with sharing class AccountApi {
             throw new AuraHandledException('Error inserting quiz answers: ' + e.getMessage());
         }
         return (QR_Answers != null && !QR_Answers.isEmpty()) ? QR_Answers[0].Id : null;
-    }
+    } // data updated
 
     @AuraEnabled(cacheable=true)
     public static List<user_attempt_result__c> getQuizAnswers(Id quizId) {
