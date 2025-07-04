@@ -91,5 +91,8 @@ public with sharing class AccountApi {
         return (QR_Answers != null && !QR_Answers.isEmpty()) ? QR_Answers[0].Id : null;
     } // data updated
     // test added
-   
+    
+    public static List<Quiz_Result__c> getQuizResults() {
+        return [SELECT Id, Name, Score__c, User_Name__c, User_Email__c FROM Quiz_Result__c];
+    }
 }
