@@ -44,9 +44,7 @@ public with sharing class AccountApi {
                 finalSubjects.add(entry.getLabel());
             }
         }
-        system.debug('get subjectValues: '+subjectValues);
-        system.debug('get subjects from custome: '+subjects);
-        system.debug('get finalSubjects: '+finalSubjects);
+        
         return finalSubjects;
     }
     
