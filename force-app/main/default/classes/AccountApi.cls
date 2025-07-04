@@ -48,7 +48,7 @@ public with sharing class AccountApi {
         return finalSubjects;
     }
     
-    
+    // get task subject values based on record type id
     
     @AuraEnabled(cacheable=true)
     public static List<String> getTaskSubjects(Id recordTypeId) {
