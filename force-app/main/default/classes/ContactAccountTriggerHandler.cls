@@ -50,6 +50,6 @@ public with sharing class ContactAccountTriggerHandler {
         return [SELECT Id, Name FROM Quiz_Result__c];
     }
 
-    // test updated
+    // test updated for trigger
         
 }

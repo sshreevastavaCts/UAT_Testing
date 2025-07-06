@@ -35,16 +35,6 @@ jobs:
         env:
           SFDX_DISABLE_DNS_CHECK: true
 
-      - name: Commit delta if changes exist
-        if: steps.delta_check.outputs.changes_exist != '0'
-        run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git checkout -b pr/${{ github.ref_name }}
-          git add delta
-          git commit -m "Auto PR: Delta package from feature branch"
-          git push origin pr/${{ github.ref_name }}
-
       - name: Create Pull Request
         if: steps.delta_check.outputs.changes_exist != '0'
         uses: peter-evans/create-pull-request@v6
