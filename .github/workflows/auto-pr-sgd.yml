@@ -1,0 +1,49 @@
+name: Auto PR with SFDC Git Delta
+
+on:
+  push:
+    branches:
+      - 'dev-*'
+
+jobs:
+  delta-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Salesforce CLI
+        run: |
+          npm install --global sfdx-cli
+
+      - name: Install sfdx-git-delta
+        run: |
+          npm install -g sfdx-git-delta
+
+      - name: Generate delta (changed metadata)
+        run: |
+          git fetch origin prod_env:prod_env
+          mkdir delta
+          sfdx sgd:source:delta --to "HEAD" --from "origin/prod_env" --output "delta"
+        env:
+          SFDX_DISABLE_DNS_CHECK: true
+
+      # Optionally, deploy the delta to a Salesforce org here
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'Auto PR: Delta package from feature branch'
+          title: 'Auto PR from ${{ github.ref_name }} (delta package)'
+          body: |
+            This PR was automatically created from the feature branch ${{ github.ref_name }}.
+            It contains only the changed metadata (delta) between this branch and prod_env.
+          base: prod_env
+          branch: ${{ github.ref_name }}
+          draft: false
