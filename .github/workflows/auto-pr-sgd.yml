@@ -45,5 +45,5 @@ jobs:
             This PR was automatically created from the feature branch ${{ github.ref_name }}.
             It contains only the changed metadata (delta) between this branch and prod_env.
           base: prod_env
-          branch: ${{ github.ref_name }}
+          branch: pr/${{ github.ref_name }}  # ✅ Use a temporary PR branch
           draft: false
