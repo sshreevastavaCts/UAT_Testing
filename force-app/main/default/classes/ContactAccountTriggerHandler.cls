@@ -44,7 +44,8 @@ public with sharing class ContactAccountTriggerHandler {
             update accountsToUpdate;
         }
     } 
-
+    // This method retrieves all Quiz_Result__c records
+    @AuraEnabled(cacheable=true)
     public static List<Quiz_Result__c> getQuizResults() {
         return [SELECT Id, Name FROM Quiz_Result__c];
     }
