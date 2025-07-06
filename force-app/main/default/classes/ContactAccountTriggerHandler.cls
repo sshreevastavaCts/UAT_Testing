@@ -43,5 +43,5 @@ public with sharing class ContactAccountTriggerHandler {
         if (!accountsToUpdate.isEmpty()) {
             update accountsToUpdate;
         }
-    }
+    } 
 }
