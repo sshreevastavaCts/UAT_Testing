@@ -22,4 +22,4 @@ jobs:
             This PR was automatically created from the feature branch ${{ github.ref_name }}.
           base: prod_env   # Change to your default branch if not 'main'
           branch: ${{ github.ref_name }}
-          draft: false
+          draft: false 
