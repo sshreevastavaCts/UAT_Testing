@@ -13,7 +13,7 @@ public with sharing class ContactAccountTriggerHandler {
         for (Contact con : contactList) {
             if (con.AccountId != null) {
                 accountIds.add(con.AccountId);
-            }
+            } 
         }
 
         if (accountIds.isEmpty()) return;
