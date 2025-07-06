@@ -30,12 +30,23 @@ jobs:
           git fetch origin prod_env:prod_env
           mkdir delta
           sfdx sgd:source:delta --to "HEAD" --from "origin/prod_env" --output "delta"
+          echo "::set-output name=changes_exist::$(ls -1 delta | wc -l)"
+        id: delta_check
         env:
           SFDX_DISABLE_DNS_CHECK: true
 
-      # Optionally, deploy the delta to a Salesforce org here
+      - name: Commit delta if changes exist
+        if: steps.delta_check.outputs.changes_exist != '0'
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git checkout -b pr/${{ github.ref_name }}
+          git add delta
+          git commit -m "Auto PR: Delta package from feature branch"
+          git push origin pr/${{ github.ref_name }}
 
       - name: Create Pull Request
+        if: steps.delta_check.outputs.changes_exist != '0'
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -45,5 +56,5 @@ jobs:
             This PR was automatically created from the feature branch ${{ github.ref_name }}.
             It contains only the changed metadata (delta) between this branch and prod_env.
           base: prod_env
-          branch: pr/${{ github.ref_name }}  # ✅ Use a temporary PR branch
+          branch: pr/${{ github.ref_name }}
           draft: false

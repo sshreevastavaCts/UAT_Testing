@@ -49,5 +49,7 @@ public with sharing class ContactAccountTriggerHandler {
     public static List<Quiz_Result__c> getQuizResults() {
         return [SELECT Id, Name FROM Quiz_Result__c];
     }
+
+    // test updated
         
 }
