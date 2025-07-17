@@ -2,7 +2,7 @@
  * @description       : 
  * @author            : ChangeMeIn@UserSettingsUnder.SFDoc
  * @group             : 
- * @last modified on  : 07-05-2025
+ * @last modified on  : 07-17-2025
  * @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
 **/
 
@@ -70,7 +70,7 @@ public with sharing class AccountApi {
 
     @AuraEnabled(cacheable=true)
     public static List<Quiz__c> getQuestions() {  
-        return [SELECT Id, Answer_Option_1__c, Answer_Option_2__c, Answer_Option_3__c, Correct_Answer__c, Ques_Set__c , Question__c, Name FROM Quiz__c where isActive__c = true];
+        return [SELECT Id, Answer_Option_1__c, Answer_Option_2__c, Answer_Option_3__c, Correct_Answer__c, Ques_Set__c , Question__c, Name FROM Quiz__c where isActive__c = true ORDER BY Name];
     }
 
     // save quiz answers
@@ -93,6 +93,6 @@ public with sharing class AccountApi {
     // test added
     
     public static List<Quiz_Result__c> getQuizResults() {
-        return [SELECT Id, Name, Score__c, User_Name__c, User_Email__c FROM Quiz_Result__c];
+        return [SELECT Id, Name, Score__c, Student_Name__c, Student_Name__r.email FROM Quiz_Result__c];
     }
 }

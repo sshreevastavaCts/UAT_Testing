@@ -103,7 +103,7 @@ export default class UserAttemptResult extends NavigationMixin(LightningElement)
                 { label: currentQ.Answer_Option_2__c, value: currentQ.Answer_Option_2__c },
                 { label: currentQ.Answer_Option_3__c, value: currentQ.Answer_Option_3__c }
             ];
-            options = this.shuffleArray(options);
+            //options = this.shuffleArray(options);
             this.options = options;
             this.correctAnswers[currentQ] = currentQ.Answer_Option_3__c;
         } else {

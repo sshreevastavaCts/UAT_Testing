@@ -2,7 +2,7 @@
   @description       : 
   @author            : ChangeMeIn@UserSettingsUnder.SFDoc
   @group             : 
-  @last modified on  : 04-22-2025
+  @last modified on  : 07-17-2025
   @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
 -->
 <template>
@@ -58,6 +58,13 @@
                     </template>
                     <template if:true={isVisibleTab8}>
                         <c-location-display></c-location-display>
+                    </template>                    
+                    <template if:true={isVisibleTab9}>
+                        <c-agentforce-quiz-list></c-agentforce-quiz-list>
+                    </template>
+                                       
+                    <template if:true={isVisibleTab10}>
+                        <c-user-attempt-result></c-user-attempt-result>
                     </template>
                 </div>
             </div>
