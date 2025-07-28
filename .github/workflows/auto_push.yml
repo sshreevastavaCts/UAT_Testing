@@ -23,14 +23,14 @@ jobs:
 
     - uses: sfdx-actions/setup-sfdx@v1
       with:
-        sfdx-auth-url: ${{ secrets.AUTH_SECRET }}
+        sfdx-auth-url: ${{ secrets.AUTH_SECRET_SF }}
 
     - name: Install SGD plugin
       run: echo y | sf plugins install sfdx-git-delta@6.14.0
 
     - name: Authenticate against QAVAL
       run: |
-        echo ${{ secrets.AUTH_SECRET }} > SFDX_QAVAL
+        echo ${{ secrets.AUTH_SECRET_SF }} > SFDX_QAVAL
         sf org login sfdx-url -f SFDX_QAVAL
 
     - name: Fetch all branches
@@ -84,6 +84,7 @@ jobs:
         elif test -r sgd-manifest/destructiveChanges/destructiveChanges.xml && ! test -r sgd-manifest/package/package.xml; then
           echo "Only destructive changes present and package not present"
           DEPLOY_OUTPUT=$(sf project deploy start -w 15 --post-destructive-changes sgd-manifest/destructiveChanges/destructiveChanges.xml -l RunLocalTests -o ${{ secrets.USERNAME }})
+          echo "$DEPLOY_OUTPUT"
         else
           echo "Nothing to deploy"
           exit 0
