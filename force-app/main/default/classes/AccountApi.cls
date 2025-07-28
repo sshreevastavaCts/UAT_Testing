@@ -2,7 +2,7 @@
  * @description       : 
  * @author            : ChangeMeIn@UserSettingsUnder.SFDoc
  * @group             : 
- * @last modified on  : 07-25-2025
+ * @last modified on  : 07-29-2025
  * @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
 **/
 
@@ -20,51 +20,51 @@ public with sharing class AccountApi {
     
     // get account country state city data and display in LWC pages
     // we need this for task subject filter
-   	@AuraEnabled(cacheable=true)
-    public static List<String> getTaskSubjectsByRecordId() {
-        Id recordTypeId = '012Qy000006ipY1IAI'; // example
-        RecordType rt = [SELECT DeveloperName FROM RecordType WHERE Id = :recordTypeId LIMIT 1];
-        String recordTypeDevName = rt.DeveloperName;
-        system.debug('get rec type name: '+recordTypeDevName);
-        List<String> subjectValues = new List<String>();
+   	// @AuraEnabled(cacheable=true)
+    // public static List<String> getTaskSubjectsByRecordId() {
+    //     Id recordTypeId = '012Qy000006ipY1IAI'; // example
+    //     RecordType rt = [SELECT DeveloperName FROM RecordType WHERE Id = :recordTypeId LIMIT 1];
+    //     String recordTypeDevName = rt.DeveloperName;
+    //     system.debug('get rec type name: '+recordTypeDevName);
+    //     List<String> subjectValues = new List<String>();
        
-        // get custom meta data for filter
-        List<String> subjects = new List<String>();
+    //     // get custom meta data for filter
+    //     List<String> subjects = new List<String>();
 
-        for (Task_Subject_Per_Record_Type_Id__mdt mapping : [SELECT Subject_Value__c FROM Task_Subject_Per_Record_Type_Id__mdt WHERE Record_Type_Developer_Name__c = :recordTypeDevName AND Active__c = true order by Order__c]) {
-            subjects.add(mapping.Subject_Value__c);
-        }
+    //     for (Task_Subject_Per_Record_Type_Id__mdt mapping : [SELECT Subject_Value__c FROM Task_Subject_Per_Record_Type_Id__mdt WHERE Record_Type_Developer_Name__c = :recordTypeDevName AND Active__c = true order by Order__c]) {
+    //         subjects.add(mapping.Subject_Value__c);
+    //     }
         
-        Schema.DescribeFieldResult fieldResult = Task.Subject.getDescribe();
-        List<Schema.PicklistEntry> picklistEntries = fieldResult.getPicklistValues();
-		system.debug('get picklistEntries: '+picklistEntries);
-        List<String> finalSubjects = new List<String>();
-        for (Schema.PicklistEntry entry : picklistEntries) {
-            if (entry.isActive() && subjects.contains(entry.getLabel())) {
-                finalSubjects.add(entry.getLabel());
-            }
-        }
+    //     Schema.DescribeFieldResult fieldResult = Task.Subject.getDescribe();
+    //     List<Schema.PicklistEntry> picklistEntries = fieldResult.getPicklistValues();
+	// 	system.debug('get picklistEntries: '+picklistEntries);
+    //     List<String> finalSubjects = new List<String>();
+    //     for (Schema.PicklistEntry entry : picklistEntries) {
+    //         if (entry.isActive() && subjects.contains(entry.getLabel())) {
+    //             finalSubjects.add(entry.getLabel());
+    //         }
+    //     }
         
-        return finalSubjects;
-    }
+    //     return finalSubjects;
+    // }
     
     // get task subject values based on record type id
     
-    @AuraEnabled(cacheable=true)
-    public static List<String> getTaskSubjects(Id recordTypeId) {
-        List<String> subjectValues = new List<String>();
-        // Get the Task.Subject field describe
-        Schema.DescribeFieldResult fieldResult = Task.Subject.getDescribe();
-        List<Schema.PicklistEntry> picklistEntries = fieldResult.getPicklistValues();
+    // @AuraEnabled(cacheable=true)
+    // public static List<String> getTaskSubjects(Id recordTypeId) {
+    //     List<String> subjectValues = new List<String>();
+    //     // Get the Task.Subject field describe
+    //     Schema.DescribeFieldResult fieldResult = Task.Subject.getDescribe();
+    //     List<Schema.PicklistEntry> picklistEntries = fieldResult.getPicklistValues();
 
-        for (Schema.PicklistEntry entry : picklistEntries) {
-            // Only include values valid for the given Record Type
-            if (entry.isActive() && (entry.isDefaultValue())) {
-                subjectValues.add(entry.getLabel());
-            }
-        }
-        return subjectValues;
-    }
+    //     for (Schema.PicklistEntry entry : picklistEntries) {
+    //         // Only include values valid for the given Record Type
+    //         if (entry.isActive() && (entry.isDefaultValue())) {
+    //             subjectValues.add(entry.getLabel());
+    //         }
+    //     }
+    //     return subjectValues;
+    // }
 
 
 
