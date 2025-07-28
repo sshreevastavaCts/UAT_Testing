@@ -2,7 +2,7 @@
  * @description       : 
  * @author            : ChangeMeIn@UserSettingsUnder.SFDoc
  * @group             : 
- * @last modified on  : 07-18-2025
+ * @last modified on  : 07-25-2025
  * @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
 **/
 
@@ -70,7 +70,7 @@ public with sharing class AccountApi {
 
     @AuraEnabled(cacheable=true)
     public static List<Quiz__c> getQuestions() {  
-        return [SELECT Id, Answer_Option_1__c, Answer_Option_2__c, Answer_Option_3__c, Correct_Answer__c, Ques_Set__c , Question__c, Name FROM Quiz__c where isActive__c = true ORDER BY Name];
+        return [SELECT Id, Answer_Option_1__c, Answer_Option_2__c, Answer_Option_3__c, Correct_Answer__c, Ques_Set__c , Question__c, Name FROM Quiz__c where isActive__c = true AND Ques_Set__c = 'Set 1' AND Exam_Name__c = 'Agentforce Specialist' ORDER BY Name];
     }
 
     // save quiz answers
@@ -82,8 +82,16 @@ public with sharing class AccountApi {
         
         // Insert the records
         try {
-            insert quizAnswers;
+            System.debug('QR_Answers: ' + QR_Answers);
             insert QR_Answers;
+            System.debug('QR_Answers: ' + QR_Answers);
+            for (Integer i = 0; i < quizAnswers.size(); i++) {
+                if (i < quizAnswers.size()) {
+                    quizAnswers[i].Quiz_Result__c = QR_Answers[0].Id; // Replace with your lookup field API name
+                }
+            }
+            System.debug('quizAnswers: ' + quizAnswers);
+            insert quizAnswers;
             
         } catch (DmlException e) {
             throw new AuraHandledException('Error inserting quiz answers: ' + e.getMessage());
@@ -93,6 +101,6 @@ public with sharing class AccountApi {
     // test added
     
     public static List<Quiz_Result__c> getQuizResults() {
-        return [SELECT Id, Name, Score__c, Student_Name__c, Student_Name__r.email FROM Quiz_Result__c limit 99];
+        return [SELECT Id, Name, Score__c, Student_Name__c, Student_Name__r.email FROM Quiz_Result__c];
     }
 }

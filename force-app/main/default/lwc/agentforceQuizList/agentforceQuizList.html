@@ -2,7 +2,7 @@
   @description       : 
   @author            : ChangeMeIn@UserSettingsUnder.SFDoc
   @group             : 
-  @last modified on  : 07-17-2025
+  @last modified on  : 07-25-2025
   @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
 -->
 <template>
@@ -10,7 +10,7 @@
         <div class="slds-m-around_medium">
             <template for:each={pagedData} for:item="quiz" for:index="index">
                 <div key={quiz.id} class="slds-box slds-m-bottom_medium">
-                    <div>
+                    <div> 
                         <b>{quiz.name}:</b> {quiz.question}
                     </div>
                     <div class="slds-m-top_x-small">
@@ -22,8 +22,12 @@
                         </ul>
                     </div>
                     <div class="slds-m-top_x-small">
-                        <b>Correct Answer:</b>
-                        <span class="correct-answer"> {quiz.correctAnswer}</span>
+                        <a href="javascript:void(0);" onclick={toggleCorrectAnswer} data-id={quiz.id}>
+                            <b>Show Correct Answer : </b>
+                        </a>
+                        <template if:true={quiz.showCorrect}>
+                            <span class="correct-answer"> {quiz.correctAnswer}</span>
+                        </template>
                     </div>
                 </div>
             </template>

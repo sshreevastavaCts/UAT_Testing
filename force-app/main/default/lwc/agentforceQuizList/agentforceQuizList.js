@@ -15,7 +15,7 @@ export default class AgentforceQuizList extends LightningElement {
     @wire(getQuizQuestions)
     wiredQuestions({ error, data }) {
         if (data) {
-            this.quizData = data.map(q => ({
+            this.quizData = data.map((q, i) => ({
                 id: q.Id,
                 question: q.Question__c,
                 name: q.Name,
@@ -24,11 +24,22 @@ export default class AgentforceQuizList extends LightningElement {
                     q.Answer_Option_2__c,
                     q.Answer_Option_3__c
                 ],
-                correctAnswer: q.Correct_Answer__c
-            }));
+                correctAnswer: q.Correct_Answer__c,
+                showCorrect: false // default hidden
+            }) );
             this.filterAndPaginate();
         }
     }
+
+    toggleCorrectAnswer(event) {
+       // console.log('hi:');
+        const quizId = event.currentTarget.dataset.id;
+        //console.log('hi:', quizId);
+        this.pagedData = this.pagedData.map(q => ({
+            ...q,
+            showCorrect: q.id === quizId ? !q.showCorrect : q.showCorrect
+        }));
+    } 
 
     handlePrev() {
         if (this.currentPage > 1) {
