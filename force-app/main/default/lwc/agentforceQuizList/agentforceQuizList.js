@@ -10,7 +10,11 @@ export default class AgentforceQuizList extends LightningElement {
     @track sortedBy = 'name';
     @track sortedDirection = 'asc';
 
-    
+    @track selectedSet = 'Set 1';
+    setOptions = [
+        { label: 'Set 1', value: 'Set 1' },
+        { label: 'Set 2', value: 'Set 2' }
+    ];
 
     @wire(getQuizQuestions)
     wiredQuestions({ error, data }) {
@@ -31,6 +35,30 @@ export default class AgentforceQuizList extends LightningElement {
         }
     }
 
+    handleSetChange(event) {
+        this.selectedSet = event.detail.value;
+        this.fetchQuestionsForSet();
+    }
+    fetchQuestionsForSet() {
+        // Call Apex with selectedSet as a parameter (update your @AuraEnabled method to accept set)
+        getQuizQuestions({ setName: this.selectedSet })
+            .then(data => {
+                this.quizData = data.map((q, i) => ({
+                    id: q.Id,
+                    question: q.Question__c,
+                    name: q.Name,
+                    answersArr: [
+                        q.Answer_Option_1__c,
+                        q.Answer_Option_2__c,
+                        q.Answer_Option_3__c
+                    ],
+                    correctAnswer: q.Correct_Answer__c,
+                    showCorrect: false
+                }));
+                this.filterAndPaginate();
+            });
+    }
+    
     toggleCorrectAnswer(event) {
        // console.log('hi:');
         const quizId = event.currentTarget.dataset.id;

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomApplication xmlns="http://soap.sforce.com/2006/04/metadata">
+    <brand>
+        <headerColor>#0070D2</headerColor>
+        <logo>medical_phamacy_logo</logo>
+        <logoVersion>1</logoVersion>
+        <shouldOverrideOrgTheme>false</shouldOverrideOrgTheme>
+    </brand>
+    <formFactors>Small</formFactors>
+    <formFactors>Large</formFactors>
+    <isNavAutoTempTabsDisabled>false</isNavAutoTempTabsDisabled>
+    <isNavPersonalizationDisabled>false</isNavPersonalizationDisabled>
+    <isNavTabPersistenceDisabled>false</isNavTabPersistenceDisabled>
+    <isOmniPinnedViewEnabled>false</isOmniPinnedViewEnabled>
+    <label>Medical Pharmacy</label>
+    <navType>Standard</navType>
+    <tabs>standard-Account</tabs>
+    <tabs>standard-Contact</tabs>
+    <tabs>standard-Contract</tabs>
+    <tabs>standard-ContractLineItem</tabs>
+    <tabs>standard-ServiceContract</tabs>
+    <tabs>standard-Lead</tabs>
+    <tabs>Medicine_Category__c</tabs>
+    <tabs>Medicine_Master__c</tabs>
+    <tabs>Medicine_Batches__c</tabs>
+    <tabs>InvoiceLineItem__c</tabs>
+    <tabs>Meeting__c</tabs>
+    <tabs>Action_Item__c</tabs>
+    <uiType>Lightning</uiType>
+    <utilityBar>Medical_Pharmacy_UtilityBar</utilityBar>
+</CustomApplication>

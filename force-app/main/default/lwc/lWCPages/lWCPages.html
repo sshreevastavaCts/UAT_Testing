@@ -2,7 +2,7 @@
   @description       : 
   @author            : ChangeMeIn@UserSettingsUnder.SFDoc
   @group             : 
-  @last modified on  : 07-17-2025
+  @last modified on  : 01-20-2026
   @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
 -->
 <template>
@@ -65,6 +65,13 @@
                                        
                     <template if:true={isVisibleTab10}>
                         <c-user-attempt-result></c-user-attempt-result>
+                    </template>
+                                       
+                    <template if:true={isVisibleTab11}>
+                        <c-file-upload></c-file-upload>
+                    </template>
+                    <template if:true={isVisibleTab12}>
+                        <c-voice-assistant></c-voice-assistant>
                     </template>
                 </div>
             </div>

@@ -24,5 +24,11 @@
     <tabs>standard-File</tabs>
     <tabs>user_attempt_result__c</tabs>
     <tabs>Quiz_Result__c</tabs>
+    <tabs>Medicine_Category__c</tabs>
+    <tabs>Medicine_Master__c</tabs>
+    <tabs>Medicine_Batches__c</tabs>
+    <tabs>InvoiceLineItem__c</tabs>
+    <tabs>Meeting__c</tabs>
+    <tabs>Action_Item__c</tabs>
     <uiType>Lightning</uiType>
 </CustomApplication>

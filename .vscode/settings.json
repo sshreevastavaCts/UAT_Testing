@@ -4,8 +4,26 @@
     "**/bower_components": true,
     "**/.sfdx": true
   },
-  "workbench.colorCustomizations": {
-    "statusBar.background": "#2f53a8",
-    "activityBar.background": "#2f53a8"
-  }
+  "workbench.colorCustomizations": {},
+  "xml.preferences.showSchemaDocumentationType": "none",
+  "salesforce.einsteinForDevelopers.optimizeContextWindowForDataMasking": true,
+  "salesforce.einsteinForDevelopers.enableDebugLogging": true,
+  "salesforce.einsteinForDevelopers.enableAutocompletionsByFileType": {
+    "flow": true
+  },
+  "files.exclude": {
+    "**/.apivcs": true,
+    "**/.gitignore": true,
+    "**/.git": true,
+    "**/.designer.json": true,
+    "**/.exchange.xml": true,
+    "**/.vscode": true,
+    "**/.mvn": true,
+    "**/.tmp": true,
+    "**/.settings": true,
+    "**/.exchange_modules_tmp": true
+  },
+  "salesforce.einsteinForDevelopers.enable": true,
+  "editor.acceptSuggestionOnEnter": "on",
+  "editor.wordBasedSuggestions": "off"
 }

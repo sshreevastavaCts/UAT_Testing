@@ -2,7 +2,7 @@
  * @description       : 
  * @author            : ChangeMeIn@UserSettingsUnder.SFDoc
  * @group             : 
- * @last modified on  : 07-29-2025
+ * @last modified on  : 09-10-2025
  * @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
 **/
 
@@ -69,8 +69,9 @@ public with sharing class AccountApi {
 
 
     @AuraEnabled(cacheable=true)
-    public static List<Quiz__c> getQuestions() {  
-        return [SELECT Id, Answer_Option_1__c, Answer_Option_2__c, Answer_Option_3__c, Correct_Answer__c, Ques_Set__c , Question__c, Name FROM Quiz__c where isActive__c = true AND Ques_Set__c = 'Set 1' AND Exam_Name__c = 'Agentforce Specialist' ORDER BY Name];
+    public static List<Quiz__c> getQuestions(String setName) {  
+        setName = (setName == null || setName.trim() == '') ? 'Set 1' : setName;
+        return [SELECT Id, Answer_Option_1__c, Answer_Option_2__c, Answer_Option_3__c, Correct_Answer__c, Ques_Set__c , Question__c, Name FROM Quiz__c where isActive__c = true AND Ques_Set__c = :setName AND Exam_Name__c = 'Agentforce Specialist' ORDER BY Name];
     }
 
     // save quiz answers

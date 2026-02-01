@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Wholesaler__c</fullName>
+    <description>Lookup to Account representing the Wholesaler for the Pharmacy Account created by the New Order Form flow.</description>
+    <externalId>false</externalId>
+    <label>Wholesaler</label>
+    <referenceTo>Account</referenceTo>
+    <relationshipLabel>Pharmacy Accounts</relationshipLabel>
+    <relationshipName>Pharmacy_Accounts</relationshipName>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

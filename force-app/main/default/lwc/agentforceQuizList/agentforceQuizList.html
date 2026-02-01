@@ -2,12 +2,21 @@
   @description       : 
   @author            : ChangeMeIn@UserSettingsUnder.SFDoc
   @group             : 
-  @last modified on  : 07-25-2025
+  @last modified on  : 09-10-2025
   @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
 -->
 <template>
-    <lightning-card title="AF: Question List - Set 4">
+    <lightning-card title="AF: Question List">
         <div class="slds-m-around_medium">
+            <div class="slds-m-bottom_medium">
+                <lightning-combobox
+                    name="questionSet"
+                    label="Select Question Set"
+                    value={selectedSet}
+                    options={setOptions}
+                    onchange={handleSetChange}>
+                </lightning-combobox>
+            </div>
             <template for:each={pagedData} for:item="quiz" for:index="index">
                 <div key={quiz.id} class="slds-box slds-m-bottom_medium">
                     <div> 

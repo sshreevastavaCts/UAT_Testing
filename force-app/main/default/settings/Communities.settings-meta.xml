@@ -9,7 +9,7 @@
     <enableGuestSecurityOptOutCruc>false</enableGuestSecurityOptOutCruc>
     <enableInviteChatterGuestEnabled>true</enableInviteChatterGuestEnabled>
     <enableNetworksEnabled>false</enableNetworksEnabled>
-    <enableOotbProfExtUserOpsEnable>false</enableOotbProfExtUserOpsEnable>
+    <enableOotbProfExtUserOpsEnable>true</enableOotbProfExtUserOpsEnable>
     <enablePRMAccRelPref>false</enablePRMAccRelPref>
     <enableRelaxPartnerAccountFieldPref>false</enableRelaxPartnerAccountFieldPref>
 </CommunitiesSettings>
