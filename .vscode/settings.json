@@ -25,5 +25,6 @@
   },
   "salesforce.einsteinForDevelopers.enable": true,
   "editor.acceptSuggestionOnEnter": "on",
-  "editor.wordBasedSuggestions": "off"
+  "editor.wordBasedSuggestions": "off",
+  "salesforcedx-vscode-core.show-cli-success-msg": false
 }

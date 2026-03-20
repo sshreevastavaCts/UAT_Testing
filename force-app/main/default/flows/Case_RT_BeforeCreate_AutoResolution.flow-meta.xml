@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>60.0</apiVersion>
+    <label>Case RT: Before Create - Auto Resolution</label>
+    <description>Before-save flow: When Case Type = Cancellation and RecordType = Flight_Disruption, auto-set Resolution__c to "Refund". Skips if Bypass_Business_Logic__c = true. Designed to safely coexist with Apex by using strict entry conditions and before-save Fast Field Updates.</description>
+    <processMetadataValues>
+        <name>BuilderType</name>
+        <value>LightningFlowBuilder</value>
+    </processMetadataValues>
+    <processType>Flow</processType>
+    <status>Active</status>
+
+    <!-- Start: Record-Triggered (Before Save on Create) -->
+    <start>
+        <location>RecordTriggered</location>
+        <object>Case</object>
+        <recordTriggerType>Create</recordTriggerType>
+        <triggerType>RecordBeforeSave</triggerType>
+        <filters>
+            <field>Bypass_Business_Logic__c</field>
+            <operator>EqualTo</operator>
+            <value>false</value>
+        </filters>
+        <filters>
+            <field>Type</field>
+            <operator>EqualTo</operator>
+            <value>Cancellation</value>
+        </filters>
+        <filters>
+            <field>RecordType.DeveloperName</field>
+            <operator>EqualTo</operator>
+            <value>Flight_Disruption</value>
+        </filters>
+        <triggerOrder>1</triggerOrder>
+        <scheduledPathsAllowed>false</scheduledPathsAllowed>
+        <optimizationType>FastFieldUpdates</optimizationType>
+    </start>
+
+    <!-- A single Assignment element is sufficient in a before-save flow -->
+
+    <elements>
+        <assignment>
+            <name>Set_Resolution_To_Refund</name>
+            <label>Set Resolution to Refund</label>
+            <assignmentItems>
+                <assignToReference>$Record.Resolution__c</assignToReference>
+                <operator>Assign</operator>
+                <value>Refund</value>
+            </assignmentItems>
+        </assignment>
+    </elements>
+
+    <!-- End of Flow -->
+</Flow>
