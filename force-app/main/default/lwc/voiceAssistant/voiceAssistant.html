@@ -1,0 +1,27 @@
+<!--
+  @description       : 
+  @author            : ChangeMeIn@UserSettingsUnder.SFDoc
+  @group             : 
+  @last modified on  : 01-20-2026
+  @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
+-->
+<template>
+    <lightning-card title="Voice Assistant">
+        <div class="slds-m-around_medium">
+            <lightning-button label="Start Listening" onclick={startListening}></lightning-button>
+            <lightning-button label="Stop Listening" onclick={stopListening} class="slds-m-left_small"></lightning-button>
+            <div class="slds-m-top_medium">
+                <lightning-formatted-text value={transcript}></lightning-formatted-text>
+            </div>
+            <lightning-button label="Clear" onclick={clearTranscript} class="slds-m-left_small"></lightning-button>
+            <template if:true={error}>
+                <div class="slds-text-color_error slds-m-top_small">{error}</div>
+            </template>
+
+            <lightning-button label="Get Answer" onclick={getAnswerFromTranscript}></lightning-button>
+            <template if:true={answer}>
+                <lightning-formatted-rich-text value={answer}></lightning-formatted-rich-text>
+            </template>
+        </div>
+    </lightning-card>
+</template>

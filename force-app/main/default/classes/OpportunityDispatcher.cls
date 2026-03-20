@@ -8,8 +8,9 @@ public class OpportunityDispatcher {
                                           try{
                                               Map<Id, Task> insertTasks = new Map<Id, Task>();
                                               for (opportunity opp: newlist) {
-                                                  Opportunity oOptyOld = oldMap.get(opp.Id);
-                                                  if (isExecuting && isAfter && (isInsert || isUpdate) ) { // execute if called by trigger
+                                                  
+                                                  if (isExecuting && isAfter && (isInsert || isUpdate) && oldMap != null) { // execute if called by trigger
+                                                     // Opportunity oOptyOld = (oldMap.size() > 0) ? oldMap.get(opp.Id) : null;
                                                       if (opp.stageName != null && oldMap.get(opp.Id).stageName != opp.stageName) {
                                                           insertTasks.put(opp.id, new Task(subject = 'testing recordId '+opp.Id, whatId = opp.Id, ownerid = opp.ownerid));
                                                       }

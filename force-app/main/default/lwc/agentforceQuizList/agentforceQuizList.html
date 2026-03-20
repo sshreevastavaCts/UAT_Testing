@@ -1,0 +1,50 @@
+<!--
+  @description       : 
+  @author            : ChangeMeIn@UserSettingsUnder.SFDoc
+  @group             : 
+  @last modified on  : 09-10-2025
+  @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
+-->
+<template>
+    <lightning-card title="AF: Question List">
+        <div class="slds-m-around_medium">
+            <div class="slds-m-bottom_medium">
+                <lightning-combobox
+                    name="questionSet"
+                    label="Select Question Set"
+                    value={selectedSet}
+                    options={setOptions}
+                    onchange={handleSetChange}>
+                </lightning-combobox>
+            </div>
+            <template for:each={pagedData} for:item="quiz" for:index="index">
+                <div key={quiz.id} class="slds-box slds-m-bottom_medium">
+                    <div> 
+                        <b>{quiz.name}:</b> {quiz.question}
+                    </div>
+                    <div class="slds-m-top_x-small">
+                        <b>Answers:</b>
+                        <ul style="list-style-type: disc; padding-left: 1.5rem;">
+                            <template for:each={quiz.answersArr} for:item="ans">
+                                <li key={ans}>{ans}</li>
+                            </template>
+                        </ul>
+                    </div>
+                    <div class="slds-m-top_x-small">
+                        <a href="javascript:void(0);" onclick={toggleCorrectAnswer} data-id={quiz.id}>
+                            <b>Show Correct Answer : </b>
+                        </a>
+                        <template if:true={quiz.showCorrect}>
+                            <span class="correct-answer"> {quiz.correctAnswer}</span>
+                        </template>
+                    </div>
+                </div>
+            </template>
+            <div class="slds-m-top_medium slds-align_absolute-center">
+                <lightning-button label="Previous" onclick={handlePrev} disabled={isPrevDisabled}></lightning-button>
+                <span class="slds-m-horizontal_medium">Page {currentPage} of {totalPages}</span>
+                <lightning-button label="Next" onclick={handleNext} disabled={isNextDisabled}></lightning-button>
+            </div>
+        </div>
+    </lightning-card>
+</template>

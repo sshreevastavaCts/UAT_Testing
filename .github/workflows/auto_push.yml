@@ -1,0 +1,102 @@
+name: Auto Push to dev Org
+on:
+  push:
+    branches: [ dev-001 ]
+    paths:
+      - 'force-app/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      APEX_TESTS: all
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.ref }}
+        fetch-depth: 0
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '>=20'
+        check-latest: true
+
+    - uses: sfdx-actions/setup-sfdx@v1
+      with:
+        sfdx-auth-url: ${{ secrets.AUTH_SECRET_SF }}
+
+    - name: Install SGD plugin
+      run: echo y | sf plugins install sfdx-git-delta@6.14.0
+
+    - name: Authenticate against QAVAL
+      run: |
+        echo ${{ secrets.AUTH_SECRET_SF }} > SFDX_QAVAL
+        sf org login sfdx-url -f SFDX_QAVAL
+
+    - name: Fetch all branches
+      run: git fetch --all
+
+    - name: Download Last Successful Commit
+      uses: actions/download-artifact@v4
+      with:
+        name: last-successful-commit
+      continue-on-error: true
+
+    - name: Read Last Successful Commit
+      run: |
+        if [ -f last_successful_commit.txt ]; then
+          LAST_SUCCESSFUL_COMMIT=$(cat last_successful_commit.txt)
+        else
+          LAST_SUCCESSFUL_COMMIT="origin/qaval"
+        fi
+        echo "LAST_SUCCESSFUL_COMMIT=$LAST_SUCCESSFUL_COMMIT" >> $GITHUB_ENV
+
+    - name: Determine Base Commit
+      run: |
+        if [ -f last_successful_commit.txt ]; then
+          LAST_SUCCESSFUL_COMMIT=$(cat last_successful_commit.txt)
+        else
+          # Fallback for the first run: use HEAD~1 if available, otherwise origin/qaval
+          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+            LAST_SUCCESSFUL_COMMIT="HEAD~1"
+          else
+            LAST_SUCCESSFUL_COMMIT="origin/qaval"
+          fi
+        fi
+        echo "LAST_SUCCESSFUL_COMMIT=$LAST_SUCCESSFUL_COMMIT" >> $GITHUB_ENV
+
+    - name: Create Package.xml from PR Delta
+      run: |
+        mkdir -p sgd-manifest
+        sf sgd source delta --to HEAD --from $LAST_SUCCESSFUL_COMMIT --repo-dir . --output-dir sgd-manifest
+        cat sgd-manifest/package/package.xml || echo "No package.xml"
+        cat sgd-manifest/destructiveChanges/destructiveChanges.xml || echo "No destructiveChanges.xml"
+
+    - name: Deploy to Salesforce and Save Commit Only on Validation Success
+      run: |
+        set -e
+        if test -r sgd-manifest/destructiveChanges/destructiveChanges.xml && test -r sgd-manifest/package/package.xml; then
+          echo "Both package and destructive changes exist"
+          DEPLOY_OUTPUT=$(sf project deploy start -w 15 -x sgd-manifest/package/package.xml --post-destructive-changes sgd-manifest/destructiveChanges/destructiveChanges.xml -l RunLocalTests -o ${{ secrets.USERNAME }})
+        elif test -r sgd-manifest/package/package.xml && ! test -r sgd-manifest/destructiveChanges/destructiveChanges.xml; then
+          echo "Only package exists and destructive changes not present"
+          DEPLOY_OUTPUT=$(sf project deploy start -w 15 -x sgd-manifest/package/package.xml -l RunLocalTests -o ${{ secrets.USERNAME }})
+        elif test -r sgd-manifest/destructiveChanges/destructiveChanges.xml && ! test -r sgd-manifest/package/package.xml; then
+          echo "Only destructive changes present and package not present"
+          DEPLOY_OUTPUT=$(sf project deploy start -w 15 --post-destructive-changes sgd-manifest/destructiveChanges/destructiveChanges.xml -l RunLocalTests -o ${{ secrets.USERNAME }})
+          echo "$DEPLOY_OUTPUT"
+        else
+          echo "Nothing to deploy"
+          exit 0
+        fi
+
+        echo "Deployment succeeded."
+        echo "${GITHUB_SHA}" > last_successful_commit.txt
+
+    - name: Upload Last Successful Commit
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: last-successful-commit
+        path: last_successful_commit.txt
+      continue-on-error: true

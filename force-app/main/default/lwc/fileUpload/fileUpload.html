@@ -1,0 +1,38 @@
+<!--
+  @description       : 
+  @author            : ChangeMeIn@UserSettingsUnder.SFDoc
+  @group             : 
+  @last modified on  : 08-20-2025
+  @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
+-->
+<template>
+    <lightning-card title="Custom File Upload">
+        <div class="slds-p-around_medium">
+            <lightning-input 
+                type="file" 
+                multiple 
+                label="Select Files" 
+                onchange={handleFileChange}>
+            </lightning-input>
+
+            <template if:true={files}>
+                <template for:each={files} for:item="file">
+                    <div key={file.id} class="slds-box slds-m-top_small">
+                        <div class="slds-grid slds-grid_align-spread">
+                            <div>
+                                <strong>{file.name}</strong> ({file.size})
+                            </div>
+                            <lightning-button-icon 
+                                icon-name="utility:delete" 
+                                alternative-text="Delete" 
+                                data-id={file.id} 
+                                onclick={handleDelete}>
+                            </lightning-button-icon>
+                        </div>
+                        <lightning-progress-bar value={file.progress}></lightning-progress-bar>
+                    </div>
+                </template>
+            </template>
+        </div>
+    </lightning-card>
+</template>

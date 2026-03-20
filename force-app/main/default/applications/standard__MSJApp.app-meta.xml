@@ -17,13 +17,37 @@
     <tabs>Quiz__c</tabs>
     <tabs>user_attempt_result__c</tabs>
     <tabs>Quiz_Result__c</tabs>
+    <tabs>Medicine_Category__c</tabs>
+    <tabs>Medicine_Master__c</tabs>
+    <tabs>Medicine_Batches__c</tabs>
+    <tabs>InvoiceLineItem__c</tabs>
+    <tabs>Meeting__c</tabs>
+    <tabs>Action_Item__c</tabs>
     <uiType>Lightning</uiType>
     <workspaceConfig>
+        <mappings>
+            <tab>Action_Item__c</tab>
+        </mappings>
         <mappings>
             <tab>City__c</tab>
         </mappings>
         <mappings>
             <tab>Country__c</tab>
+        </mappings>
+        <mappings>
+            <tab>InvoiceLineItem__c</tab>
+        </mappings>
+        <mappings>
+            <tab>Medicine_Batches__c</tab>
+        </mappings>
+        <mappings>
+            <tab>Medicine_Category__c</tab>
+        </mappings>
+        <mappings>
+            <tab>Medicine_Master__c</tab>
+        </mappings>
+        <mappings>
+            <tab>Meeting__c</tab>
         </mappings>
         <mappings>
             <tab>Quiz_Result__c</tab>

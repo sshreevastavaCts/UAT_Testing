@@ -103,7 +103,7 @@ export default class UserAttemptResult extends NavigationMixin(LightningElement)
                 { label: currentQ.Answer_Option_2__c, value: currentQ.Answer_Option_2__c },
                 { label: currentQ.Answer_Option_3__c, value: currentQ.Answer_Option_3__c }
             ];
-            options = this.shuffleArray(options);
+            //options = this.shuffleArray(options);
             this.options = options;
             this.correctAnswers[currentQ] = currentQ.Answer_Option_3__c;
         } else {
@@ -164,6 +164,7 @@ export default class UserAttemptResult extends NavigationMixin(LightningElement)
     
     handleOptionChange(event) {
         this.selectedAnswer = event.target.value;
+        console.log('this.selectedAnswer: ', this.selectedAnswer);
         this.isDesabledCueerntIndex = false;
         this.nextBtnIsDisabled = false;
     }
@@ -219,6 +220,8 @@ export default class UserAttemptResult extends NavigationMixin(LightningElement)
             IsCorrect_Answer__c: (this.selectedAnswer === currentQ.Correct_Answer__c) ? true : false,
         };
         this.selectedAnswer = ''; // Reset selected answer for next question
+        console.log('Responses:', JSON.stringify(this.responses));
+        console.log('selectedAnswer:', this.selectedAnswer);
     }
 
     saveResultsToApex() {

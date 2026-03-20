@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Account.New_Order_Form</fullName>
+    <label>New Order Form</label>
+    <type>Flow</type>
+    <actionSubtype>ScreenFlow</actionSubtype>
+    <flowDefinition>New_Order_Form</flowDefinition>
+    <targetObject>Account</targetObject>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+</QuickAction>

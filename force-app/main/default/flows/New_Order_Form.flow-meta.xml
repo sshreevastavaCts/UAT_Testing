@@ -1,0 +1,369 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>65.0</apiVersion>
+    <label>New Order Form</label>
+    <processType>Flow</processType>
+    <status>Active</status>
+
+    <!-- Variables -->
+    <variables>
+        <name>recordId</name>
+        <dataType>String</dataType>
+        <isCollection>false</isCollection>
+        <isInput>true</isInput>
+        <isOutput>false</isOutput>
+    </variables>
+    <variables>
+        <name>varWholesalerId</name>
+        <dataType>String</dataType>
+        <isCollection>false</isCollection>
+        <isInput>false</isInput>
+        <isOutput>false</isOutput>
+    </variables>
+    <variables>
+        <name>varStatus</name>
+        <dataType>String</dataType>
+        <isCollection>false</isCollection>
+        <isInput>false</isInput>
+        <isOutput>false</isOutput>
+    </variables>
+    <variables>
+        <name>varCreatedDate</name>
+        <dataType>Date</dataType>
+        <isCollection>false</isCollection>
+        <isInput>false</isInput>
+        <isOutput>false</isOutput>
+    </variables>
+    <variables>
+        <name>varSubmittedDate</name>
+        <dataType>Date</dataType>
+        <isCollection>false</isCollection>
+        <isInput>false</isInput>
+        <isOutput>false</isOutput>
+    </variables>
+    <variables>
+        <name>varNewAccountId</name>
+        <dataType>String</dataType>
+        <isCollection>false</isCollection>
+        <isInput>false</isInput>
+        <isOutput>true</isOutput>
+    </variables>
+    <variables>
+        <name>varNewAccountName</name>
+        <dataType>String</dataType>
+        <isCollection>false</isCollection>
+        <isInput>false</isInput>
+        <isOutput>false</isOutput>
+    </variables>
+    <variables>
+        <name>varChildCount</name>
+        <dataType>Number</dataType>
+        <isCollection>false</isCollection>
+        <isInput>false</isInput>
+        <isOutput>false</isOutput>
+        <scale>0</scale>
+    </variables>
+
+    <!-- Formula: Derive Name = Pharmacy - {Wholesaler Name} - {Today} -->
+    <formulas>
+        <name>frmDerivedName</name>
+        <dataType>String</dataType>
+        <expression>"Pharmacy - " & {!getWholesaler.Name} & " - " & TEXT(TODAY())</expression>
+    </formulas>
+
+    <!-- Get wholesaler (from recordId if launching on Wholesaler Account, else from user selection) -->
+    <recordLookups>
+        <name>getWholesaler</name>
+        <label>Get Wholesaler (from recordId if provided)</label>
+        <locationX>100</locationX>
+        <locationY>100</locationY>
+        <filters>
+            <field>Id</field>
+            <operator>EqualTo</operator>
+            <value>
+                <elementReference>recordId</elementReference>
+            </value>
+        </filters>
+        <object>Account</object>
+        <assignNullValuesIfNoRecordsFound>true</assignNullValuesIfNoRecordsFound>
+        <getFirstRecordOnly>true</getFirstRecordOnly>
+        <outputAssignments>
+            <assignedValue>
+                <elementReference>getWholesaler.Id</elementReference>
+            </assignedValue>
+            <field>varWholesalerId</field>
+        </outputAssignments>
+    </recordLookups>
+
+    <!-- Get child count: Accounts with ParentId = Wholesaler__c -->
+    <recordLookups>
+        <name>getChildAccountsCount</name>
+        <label>Get Child Accounts Count</label>
+        <locationX>100</locationX>
+        <locationY>220</locationY>
+        <filters>
+            <field>ParentId</field>
+            <operator>EqualTo</operator>
+            <value>
+                <elementReference>varWholesalerId</elementReference>
+            </value>
+        </filters>
+        <object>Account</object>
+        <assignNullValuesIfNoRecordsFound>false</assignNullValuesIfNoRecordsFound>
+        <getFirstRecordOnly>false</getFirstRecordOnly>
+        <storeOutputAutomatically>false</storeOutputAutomatically>
+        <outputAssignments>
+            <assignedValue>
+                <elementReference>$Record__Count</elementReference>
+            </assignedValue>
+            <field>varChildCount</field>
+        </outputAssignments>
+    </recordLookups>
+
+    <!-- Screen: Header/Body/Footer -->
+    <screens>
+        <name>scrNewOrder</name>
+        <label>New Order Form</label>
+        <locationX>400</locationX>
+        <locationY>100</locationY>
+        <allowBack>false</allowBack>
+        <allowFinish>true</allowFinish>
+        <allowPause>false</allowPause>
+        <connector>
+            <targetReference>decideSaveAction</targetReference>
+        </connector>
+        <fields>
+            <name>secHeader</name>
+            <fieldText>New Order Form | Status: {!varStatus}</fieldText>
+            <fieldType>DisplayText</fieldType>
+        </fields>
+        <fields>
+            <name>txtAccountName</name>
+            <fieldText>Account Name (derived): {!frmDerivedName}</fieldText>
+            <fieldType>DisplayText</fieldType>
+        </fields>
+        <fields>
+            <name>txtWholesaler</name>
+            <fieldText>Wholesaler: {!getWholesaler.Name} (Child Accounts: {!varChildCount})</fieldText>
+            <fieldType>DisplayText</fieldType>
+        </fields>
+        <fields>
+            <name>dtCreated</name>
+            <dataType>Date</dataType>
+            <defaultValue>
+                <stringValue></stringValue>
+            </defaultValue>
+            <fieldMetadata>
+                <isRequired>false</isRequired>
+                <label>Order Created Date</label>
+            </fieldMetadata>
+            <fieldType>InputField</fieldType>
+            <storeOutputAutomatically>false</storeOutputAutomatically>
+            <value>
+                <elementReference>varCreatedDate</elementReference>
+            </value>
+        </fields>
+        <fields>
+            <name>dtSubmitted</name>
+            <dataType>Date</dataType>
+            <defaultValue>
+                <stringValue></stringValue>
+            </defaultValue>
+            <fieldMetadata>
+                <isRequired>false</isRequired>
+                <label>Order Submitted Date</label>
+            </fieldMetadata>
+            <fieldType>InputField</fieldType>
+            <storeOutputAutomatically>false</storeOutputAutomatically>
+            <value>
+                <elementReference>varSubmittedDate</elementReference>
+            </value>
+        </fields>
+        <!-- Footer buttons simulated via choice -->
+        <choices>
+            <name>chSave</name>
+            <choiceText>Save</choiceText>
+            <dataType>String</dataType>
+            <value>
+                <stringValue>SAVE</stringValue>
+            </value>
+        </choices>
+        <choices>
+            <name>chSaveSubmit</name>
+            <choiceText>Save & Submit</choiceText>
+            <dataType>String</dataType>
+            <value>
+                <stringValue>SAVE_SUBMIT</stringValue>
+            </value>
+        </choices>
+        <fields>
+            <name>choiceFooter</name>
+            <choiceReferences>chSave</choiceReferences>
+            <choiceReferences>chSaveSubmit</choiceReferences>
+            <dataType>String</dataType>
+            <fieldMetadata>
+                <isRequired>true</isRequired>
+                <label>Action</label>
+            </fieldMetadata>
+            <fieldType>RadioButtons</fieldType>
+            <storeOutputAutomatically>false</storeOutputAutomatically>
+            <value>
+                <stringValue>SAVE</stringValue>
+            </value>
+        </fields>
+    </screens>
+
+    <!-- Decision on action -->
+    <decisions>
+        <name>decideSaveAction</name>
+        <label>Decide Save Path</label>
+        <locationX>650</locationX>
+        <locationY>100</locationY>
+        <defaultConnector>
+            <targetReference>setDraftValues</targetReference>
+        </defaultConnector>
+        <rules>
+            <name>rSaveSubmit</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>choiceFooter</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue>
+                    <stringValue>SAVE_SUBMIT</stringValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>setSubmitValues</targetReference>
+            </connector>
+            <label>Save & Submit</label>
+        </rules>
+    </decisions>
+
+    <!-- Assignments -->
+    <assignments>
+        <name>setDraftValues</name>
+        <label>Set Draft Values</label>
+        <locationX>900</locationX>
+        <locationY>60</locationY>
+        <connector>
+            <targetReference>createAccount</targetReference>
+        </connector>
+        <assignmentItems>
+            <assignToReference>varStatus</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <stringValue>Draft</stringValue>
+            </value>
+        </assignmentItems>
+        <assignmentItems>
+            <assignToReference>varCreatedDate</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <elementReference>$Flow.CurrentDate</elementReference>
+            </value>
+        </assignmentItems>
+    </assignments>
+
+    <assignments>
+        <name>setSubmitValues</name>
+        <label>Set Submit Values</label>
+        <locationX>900</locationX>
+        <locationY>160</locationY>
+        <connector>
+            <targetReference>createAccount</targetReference>
+        </connector>
+        <assignmentItems>
+            <assignToReference>varStatus</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <stringValue>Submitted</stringValue>
+            </value>
+        </assignmentItems>
+        <assignmentItems>
+            <assignToReference>varCreatedDate</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <elementReference>$Flow.CurrentDate</elementReference>
+            </value>
+        </assignmentItems>
+        <assignmentItems>
+            <assignToReference>varSubmittedDate</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <elementReference>$Flow.CurrentDate</elementReference>
+            </value>
+        </assignmentItems>
+    </assignments>
+
+    <!-- Create Account -->
+    <recordCreates>
+        <name>createAccount</name>
+        <label>Create Pharmacy Account</label>
+        <locationX>1150</locationX>
+        <locationY>110</locationY>
+        <object>Account</object>
+        <inputAssignments>
+            <field>Account.Name</field>
+            <value>
+                <elementReference>frmDerivedName</elementReference>
+            </value>
+        </inputAssignments>
+        <inputAssignments>
+            <field>Account.Wholesaler__c</field>
+            <value>
+                <elementReference>varWholesalerId</elementReference>
+            </value>
+        </inputAssignments>
+        <inputAssignments>
+            <field>Account.Order_Status__c</field>
+            <value>
+                <elementReference>varStatus</elementReference>
+            </value>
+        </inputAssignments>
+        <inputAssignments>
+            <field>Account.Order_Created_Date__c</field>
+            <value>
+                <elementReference>varCreatedDate</elementReference>
+            </value>
+        </inputAssignments>
+        <inputAssignments>
+            <field>Account.Order_Submitted_Date__c</field>
+            <value>
+                <elementReference>varSubmittedDate</elementReference>
+            </value>
+        </inputAssignments>
+        <storeOutputAutomatically>false</storeOutputAutomatically>
+        <outputAssignments>
+            <assignedValue>
+                <elementReference>createAccount.Id</elementReference>
+            </assignedValue>
+            <field>varNewAccountId</field>
+        </outputAssignments>
+    </recordCreates>
+
+    <!-- Navigate to new account -->
+    <actions>
+        <name>navToRecord</name>
+        <label>Navigate to New Account</label>
+        <locationX>1400</locationX>
+        <locationY>110</locationY>
+        <actionType>FlowActionCall</actionType>
+        <flowActionType>NavigateToRecord</flowActionType>
+        <configurationEntries>
+            <name>recordId</name>
+            <value>
+                <elementReference>varNewAccountId</elementReference>
+            </value>
+        </configurationEntries>
+        <connector>
+            <targetReference>theEnd</targetReference>
+        </connector>
+    </actions>
+
+    <stages>
+        <name>theEnd</name>
+        <label>End</label>
+        <locationX>1600</locationX>
+        <locationY>110</locationY>
+    </stages>
+</Flow>

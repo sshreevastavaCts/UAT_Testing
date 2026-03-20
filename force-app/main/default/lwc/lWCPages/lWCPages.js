@@ -15,6 +15,10 @@ export default class LWCPages extends LightningElement {
         { id: '6', label: 'LWC Data Binding', class: 'slds-col slds-size_1-of-1 menu_options' },
         { id: '7', label: 'LWC Event Handling', class: 'slds-col slds-size_1-of-1 menu_options' },
         { id: '8', label: 'LWC Display Locations', class: 'slds-col slds-size_1-of-1 menu_options' },
+        { id: '9', label: 'Agentforce Set 4', class: 'slds-col slds-size_1-of-1 menu_options' },
+        { id: '10', label: 'Agentforce Attempts', class: 'slds-col slds-size_1-of-1 menu_options' },
+        { id: '11', label: 'File Upload', class: 'slds-col slds-size_1-of-1 menu_options' },
+        { id: '12', label: 'Voice Assistant', class: 'slds-col slds-size_1-of-1 menu_options' }
     ];
 
     addActiveClassInLeftMenu(event) {
@@ -64,5 +68,18 @@ export default class LWCPages extends LightningElement {
        
     get isVisibleTab8() {
         return this.activeTab === '8';
+    }
+
+    get isVisibleTab9() {
+        return this.activeTab === '9';
+    }
+    get isVisibleTab10() {
+        return this.activeTab === '10';
+    }
+    get isVisibleTab11() {
+        return this.activeTab === '11';
+    }
+    get isVisibleTab12() {
+        return this.activeTab === '12';
     }
 }
