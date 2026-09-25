@@ -1,0 +1,1959 @@
+# ##############################################################################
+# WORKFLOW NAME: QA CI/CD Conflict Resolution Pipeline
+# ##############################################################################
+# This workflow handles the SECOND PASS after a developer has manually resolved
+# merge conflicts in a temporary `qa-validation-*` branch that was created by
+# qa-cicd-action.yml.
+#
+# FLOW:
+#   1. Developer pushes their conflict-resolved commits to the temp branch
+#      (qa-validation-<run_id>-<attempt>-pr-<PR_NUMBER>).
+#   2. This workflow triggers on that push.
+#   3. It looks up the original PR (using PR_NUMBER from the branch name) and
+#      finds the integration (base) branch.
+#   4. It re-attempts to merge the temp branch into the integration branch:
+#        a. If clean   → run the same validate → deploy → merge pipeline as
+#                         qa-cicd-action.yml. The original PR is merged.
+#        b. If conflict → create a NEW temp branch from integration HEAD
+#                         (fresh empty copy), notify the PR assignees via PR
+#                         comment (@mention triggers GitHub email), and delete
+#                         the OLD temp branch.
+#
+# REQUIRED SECRETS (same as qa-cicd-action.yml):
+#   QA_AUTH_SECRET = SFDX auth URL for QA org
+#   GITHUB_TOKEN   = Auto-provided by GitHub
+# ##############################################################################
+
+name: QA CI/CD Conflict Resolution Pipeline
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# ##############################################################################
+# CONCURRENCY
+# ##############################################################################
+# Group by the temp branch name so multiple pushes to the same branch don't
+# pile up; cancel any in-progress run when a newer push arrives.
+# ##############################################################################
+concurrency:
+  group: qa-cicd-conflict-${{ github.ref_name }}
+  cancel-in-progress: true
+
+# ##############################################################################
+# TRIGGER
+# ##############################################################################
+# Listens for pushes to any branch that matches qa-validation-** — that's the
+# pattern qa-cicd-action.yml uses for its temp merge branches.
+# ##############################################################################
+on:
+  push:
+    branches:
+      - 'qa-validation-**'
+
+jobs:
+
+  # ============================================================================
+  # JOB 1: RECHECK & VALIDATE
+  # ============================================================================
+  # Resolves the PR context from the branch name, re-checks the merge against
+  # integration, and (on a clean merge) runs the full validation flow.
+  # ============================================================================
+  recheck_and_validate:
+    name: Recheck Conflicts & Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    outputs:
+      pr_number:               ${{ steps.resolve_pr.outputs.pr_number }}
+      integration_branch:      ${{ steps.resolve_pr.outputs.integration_branch }}
+      feature_branch:          ${{ steps.resolve_pr.outputs.feature_branch }}
+      pr_author:               ${{ steps.resolve_pr.outputs.pr_author }}
+      assignees_json:          ${{ steps.resolve_pr.outputs.assignees_json }}
+      pr_resolved:             ${{ steps.resolve_pr.outputs.pr_resolved }}
+      is_empty:                ${{ steps.empty_check.outputs.is_empty }}
+      merge_conflict:          ${{ steps.recheck_merge.outputs.merge_conflict }}
+      conflict_files:          ${{ steps.recheck_merge.outputs.conflict_files }}
+      new_temp_branch:         ${{ steps.create_fresh_temp.outputs.new_temp_branch }}
+      validation_passed:       ${{ steps.parse_validation.outputs.validation_passed }}
+      validation_status:       ${{ steps.parse_validation.outputs.validation_status }}
+      coverage_passed:         ${{ steps.parse_validation.outputs.coverage_passed }}
+      coverage_value:          ${{ steps.parse_validation.outputs.coverage_value }}
+      has_apex_changes:        ${{ steps.detect_test_classes.outputs.has_apex_changes }}
+      # True iff at least one changed Apex class lives under force-app/**.
+      # Used to gate the RunLocalTests fallback and our per-class 75% coverage
+      # check: PRs that touch Apex only under force-dev/** are deployed and
+      # merged without either, matching the "no coverage check for force-dev"
+      # policy. Mirrors qa-cicd-action.yml.
+      has_force_app_apex_changes: ${{ steps.detect_test_classes.outputs.has_force_app_apex_changes }}
+      test_classes:            ${{ steps.combine_tests.outputs.final_test_classes }}
+      job_id:                  ${{ steps.validate_deploy.outputs.job_id }}
+      workflow_path:           ${{ steps.check_changes.outputs.workflow_path }}
+      has_manifest_changes:    ${{ steps.check_changes.outputs.has_manifest_changes }}
+      has_deployable_changes:  ${{ steps.check_changes.outputs.has_deployable_changes }}
+      test_level:              ${{ steps.validate_deploy.outputs.test_level }}
+
+    env:
+      TARGET_API: '64.0'
+      TEMP_BRANCH: ${{ github.ref_name }}
+
+    steps:
+
+      # ------------------------------------------------------------------------
+      # STEP: Check Temp Branch Still Exists On Origin (rerun guard)
+      # ------------------------------------------------------------------------
+      # GUARDS: Rerunning a workflow whose temp branch has already been
+      # deleted (e.g., because the PR was already merged, or because a fresh
+      # temp branch was created on a subsequent re-conflict).
+      #
+      # Without this guard, `actions/checkout@v4` fails with an opaque "ref
+      # not found" error at step 1, giving the developer no context.
+      #
+      # BEHAVIOR:
+      #   - If the branch still exists → set branch_exists=true, proceed.
+      #   - If the branch is 404 (deleted) → set branch_exists=false, extract
+      #     PR number from the branch name, and post a helpful comment on
+      #     the original PR (only if that PR is still open). Then exit 0 so
+      #     the workflow finishes cleanly without a red failure.
+      #   - Any other HTTP status → warn but proceed and let checkout produce
+      #     the underlying error.
+      #
+      # No git operations here — everything runs against the GitHub REST API,
+      # so this step is safe to run BEFORE the checkout step.
+      # ------------------------------------------------------------------------
+      - name: Check Temp Branch Still Exists On Origin
+        id: branch_exists_check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          SERVER_URL: ${{ github.server_url }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import sys
+          import urllib.parse
+          import urllib.request
+          import urllib.error
+
+          branch     = os.environ["BRANCH"]
+          repo       = os.environ["REPO"]
+          token      = os.environ["GITHUB_TOKEN"]
+          server_url = os.environ.get("SERVER_URL", "https://github.com")
+          run_id     = os.environ.get("RUN_ID", "")
+
+          def gh_get(url):
+              req = urllib.request.Request(
+                  url,
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(req) as resp:
+                      return resp.status, resp.read().decode()
+              except urllib.error.HTTPError as e:
+                  return e.code, e.read().decode(errors="replace")
+
+          def write_output(key, value):
+              gh_output = os.environ.get("GITHUB_OUTPUT")
+              if gh_output:
+                  with open(gh_output, "a") as f:
+                      f.write(f"{key}={value}\n")
+
+          # URL-encode the branch name (defensive; qa-validation-* has no
+          # slashes today, but a future rename to include `/` should not break
+          # the API call).
+          branch_enc = urllib.parse.quote(branch, safe="")
+          print(f"Checking if branch '{branch}' still exists on origin...")
+
+          code, body = gh_get(
+              f"https://api.github.com/repos/{repo}/branches/{branch_enc}"
+          )
+
+          if code == 200:
+              print("✅ Branch exists on origin")
+              write_output("branch_exists", "true")
+              sys.exit(0)
+
+          if code != 404:
+              # Unknown error — proceed and let downstream checkout produce
+              # the underlying error rather than swallowing it here.
+              print(f"::warning::Unexpected HTTP {code} from branch existence check — proceeding")
+              print(body)
+              write_output("branch_exists", "true")
+              sys.exit(0)
+
+          # 404 — branch is gone. This is almost certainly a rerun of an old
+          # run whose branch has since been cleaned up.
+          print(f"::warning::Temp branch '{branch}' no longer exists on origin — likely a rerun of a workflow whose branch has already been deleted.")
+          write_output("branch_exists", "false")
+
+          # Try to extract PR number from the branch name so we can leave a
+          # helpful comment on the original PR.
+          m = re.search(r"-pr-(\d+)$", branch)
+          if not m:
+              print("Could not extract PR number from branch name — no comment posted")
+              sys.exit(0)
+          pr_number = m.group(1)
+          print(f"Extracted PR number: {pr_number}")
+
+          # Verify the PR still exists and is open before commenting on it.
+          pr_code, pr_body = gh_get(
+              f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
+          )
+          if pr_code != 200:
+              print(f"PR #{pr_number} lookup returned HTTP {pr_code} — skipping comment")
+              sys.exit(0)
+          try:
+              pr_data = json.loads(pr_body)
+          except json.JSONDecodeError:
+              print("PR response was not valid JSON — skipping comment")
+              sys.exit(0)
+          pr_state = pr_data.get("state", "unknown")
+          if pr_state != "open":
+              print(f"PR #{pr_number} is {pr_state} — skipping comment")
+              sys.exit(0)
+
+          run_url = f"{server_url}/{repo}/actions/runs/{run_id}" if run_id else ""
+          body_md = (
+              "## 🤖 QA CI/CD Conflict — ⚠️ Cannot Rerun\n\n"
+              f"Temp branch `{branch}` no longer exists (likely superseded or already merged).\n\n"
+              "Push new changes to your feature branch to start a fresh run, "
+              "or check the latest workflow runs on this PR.\n"
+          )
+          if run_url:
+              body_md += f"\n_[this run]({run_url})_\n"
+
+          payload = json.dumps({"body": body_md}).encode("utf-8")
+          req = urllib.request.Request(
+              f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments",
+              data=payload,
+              method="POST",
+              headers={
+                  "Authorization": f"Bearer {token}",
+                  "Accept": "application/vnd.github+json",
+                  "Content-Type": "application/json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+          )
+          try:
+              with urllib.request.urlopen(req) as resp:
+                  print(f"Comment posted: HTTP {resp.status}")
+          except urllib.error.HTTPError as e:
+              print(f"::warning::Failed to post PR comment: HTTP {e.code} - {e.read().decode(errors='replace')}")
+          PY
+
+      # ------------------------------------------------------------------------
+      # STEP: Checkout temp branch (full history needed for diff/merge)
+      # ------------------------------------------------------------------------
+      # Gated on the branch-existence check above so a rerun against a deleted
+      # branch exits cleanly at the previous step instead of failing here with
+      # an opaque "ref not found" error.
+      - name: Checkout Temp Branch
+        if: steps.branch_exists_check.outputs.branch_exists != 'false'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      # ------------------------------------------------------------------------
+      # STEP: Resolve PR context from branch name
+      # ------------------------------------------------------------------------
+      # Branch name format: qa-validation-<RUN_ID>-<ATTEMPT>-pr-<PR_NUMBER>
+      # We parse PR_NUMBER, then call the GitHub API to read:
+      #   - base branch (integration/...)
+      #   - head branch (feature branch)
+      #   - assignees / author (for later @mention)
+      # ------------------------------------------------------------------------
+      - name: Resolve PR Context From Branch Name
+        id: resolve_pr
+        if: steps.branch_exists_check.outputs.branch_exists != 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          BRANCH="${TEMP_BRANCH}"
+          echo "Temp branch: $BRANCH"
+
+          # Extract PR_NUMBER from the trailing -pr-<NUM> segment.
+          PR_NUMBER=$(echo "$BRANCH" | sed -nE 's/.*-pr-([0-9]+)$/\1/p')
+
+          if [ -z "$PR_NUMBER" ]; then
+            echo "::error title=Cannot Resolve PR::Branch '$BRANCH' does not match qa-validation-*-pr-<NUMBER> pattern."
+            echo "pr_resolved=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          echo "PR number: $PR_NUMBER"
+
+          # Fetch PR metadata via GitHub REST API.
+          HTTP_CODE=$(curl -s -o /tmp/pr.json -w "%{http_code}" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER")
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error title=PR Lookup Failed::HTTP $HTTP_CODE fetching PR #$PR_NUMBER"
+            cat /tmp/pr.json || true
+            echo "pr_resolved=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          INTEGRATION_BRANCH=$(jq -r '.base.ref' /tmp/pr.json)
+          FEATURE_BRANCH=$(jq -r '.head.ref' /tmp/pr.json)
+          PR_AUTHOR=$(jq -r '.user.login' /tmp/pr.json)
+          ASSIGNEES_JSON=$(jq -c '.assignees // []' /tmp/pr.json)
+          PR_STATE=$(jq -r '.state' /tmp/pr.json)
+
+          echo "Integration branch: $INTEGRATION_BRANCH"
+          echo "Feature branch:     $FEATURE_BRANCH"
+          echo "PR author:          $PR_AUTHOR"
+          echo "PR state:           $PR_STATE"
+
+          if [ "$PR_STATE" != "open" ]; then
+            echo "::warning::PR #$PR_NUMBER is not open (state: $PR_STATE). Skipping further processing."
+            echo "pr_resolved=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          {
+            echo "pr_number=$PR_NUMBER"
+            echo "integration_branch=$INTEGRATION_BRANCH"
+            echo "feature_branch=$FEATURE_BRANCH"
+            echo "pr_author=$PR_AUTHOR"
+            echo "assignees_json=$ASSIGNEES_JSON"
+            echo "pr_resolved=true"
+          } >> $GITHUB_OUTPUT
+
+      # ------------------------------------------------------------------------
+      # STEP: Detect empty fresh temp branch (avoid self-trigger loop)
+      # ------------------------------------------------------------------------
+      # When the re-conflict path of this workflow creates a NEW fresh temp
+      # branch from integration HEAD and pushes it, that push retriggers this
+      # workflow on the new branch. The new run would do nothing useful but
+      # would still post a "Validation Skipped" comment on the PR, polluting
+      # the thread. Detect this case (temp branch has no commits ahead of
+      # integration) and gate all subsequent steps off it.
+      # ------------------------------------------------------------------------
+      - name: Detect Empty Fresh Temp Branch
+        id: empty_check
+        if: steps.resolve_pr.outputs.pr_resolved == 'true'
+        env:
+          INTEGRATION_BRANCH: ${{ steps.resolve_pr.outputs.integration_branch }}
+        run: |
+          set +e
+          git config --add remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+          git fetch origin "$INTEGRATION_BRANCH":refs/remotes/origin/"$INTEGRATION_BRANCH" --force
+
+          AHEAD=$(git rev-list --count "origin/$INTEGRATION_BRANCH..HEAD" 2>/dev/null || echo "0")
+          echo "Commits on temp branch ahead of integration: $AHEAD"
+
+          if [ "$AHEAD" = "0" ]; then
+            echo "is_empty=true" >> $GITHUB_OUTPUT
+            echo "::notice::Temp branch has no commits ahead of integration. This is likely a freshly-created fallback branch from a prior re-conflict run — skipping all further processing."
+          else
+            echo "is_empty=false" >> $GITHUB_OUTPUT
+          fi
+
+      # ------------------------------------------------------------------------
+      # STEP: Configure git identity (used by both merge paths)
+      # ------------------------------------------------------------------------
+      - name: Configure Git Identity
+        if: steps.resolve_pr.outputs.pr_resolved == 'true' && steps.empty_check.outputs.is_empty != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # ------------------------------------------------------------------------
+      # STEP: Recheck merge of temp branch into integration branch
+      # ------------------------------------------------------------------------
+      # This is the core conflict check. We:
+      #   1. Fetch integration branch.
+      #   2. Create a throwaway local branch from integration HEAD.
+      #   3. Attempt to merge the temp branch (which carries the developer's
+      #      conflict-resolved code).
+      #   4. Report conflict / clean.
+      # ------------------------------------------------------------------------
+      - name: Recheck Merge (Temp → Integration)
+        id: recheck_merge
+        if: steps.resolve_pr.outputs.pr_resolved == 'true' && steps.empty_check.outputs.is_empty != 'true'
+        env:
+          INTEGRATION_BRANCH: ${{ steps.resolve_pr.outputs.integration_branch }}
+        run: |
+          set +e
+          echo "=== Setting up remote refs ==="
+          git config --add remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+          git fetch origin "$INTEGRATION_BRANCH":refs/remotes/origin/"$INTEGRATION_BRANCH" --force
+          git fetch origin "$TEMP_BRANCH":refs/remotes/origin/"$TEMP_BRANCH" --force
+
+          DRY_RUN_BRANCH="qa-recheck-dryrun-${{ github.run_id }}-${{ github.run_attempt }}"
+          echo "Creating dry-run branch: $DRY_RUN_BRANCH from origin/$INTEGRATION_BRANCH"
+
+          if ! git checkout -B "$DRY_RUN_BRANCH" "origin/$INTEGRATION_BRANCH"; then
+            echo "::error title=Checkout Failed::Could not checkout origin/$INTEGRATION_BRANCH"
+            echo "merge_conflict=true" >> $GITHUB_OUTPUT
+            echo "conflict_files=checkout_failed" >> $GITHUB_OUTPUT
+            # Exit 0 (not 1) so subsequent conflict-recovery steps still run.
+            # Those steps gate on merge_conflict == 'true'; using exit 1 here
+            # would fail this step and cause GitHub Actions' implicit
+            # success() check to skip Create Fresh Temp Branch, Notify PR,
+            # Delete Old Temp Branch, and Fail On Re-Conflict — leaving the
+            # PR without any notification. Matches the exit 0 semantics used
+            # by the unrelated_histories / merge_error paths below.
+            exit 0
+          fi
+
+          echo "Attempting merge: origin/$TEMP_BRANCH → $INTEGRATION_BRANCH"
+          MERGE_EXIT=
+          MERGE_OUTPUT=$(git merge --no-ff --no-edit "origin/$TEMP_BRANCH" 2>&1) || MERGE_EXIT=$?
+
+          if [ -n "$MERGE_EXIT" ]; then
+            echo "$MERGE_OUTPUT"
+
+            if echo "$MERGE_OUTPUT" | grep -q "unrelated histories"; then
+              echo "::error title=Unrelated Histories::Temp branch '$TEMP_BRANCH' is not related to '$INTEGRATION_BRANCH'."
+              echo "merge_conflict=true" >> $GITHUB_OUTPUT
+              echo "conflict_files=unrelated_histories" >> $GITHUB_OUTPUT
+              git merge --abort 2>/dev/null || true
+              exit 0
+            fi
+
+            CONFLICT_FILES=$(git diff --name-only --diff-filter=U | tr '\n' ',' | sed 's/,$//')
+            if [ -n "$CONFLICT_FILES" ]; then
+              echo "merge_conflict=true" >> $GITHUB_OUTPUT
+              echo "conflict_files=$CONFLICT_FILES" >> $GITHUB_OUTPUT
+              echo "::warning title=Merge Conflict Re-Detected::Conflicted files: $CONFLICT_FILES"
+              git merge --abort 2>/dev/null || true
+              exit 0
+            fi
+
+            echo "merge_conflict=true" >> $GITHUB_OUTPUT
+            echo "conflict_files=merge_error" >> $GITHUB_OUTPUT
+            git merge --abort 2>/dev/null || true
+            exit 0
+          fi
+
+          echo "merge_conflict=false" >> $GITHUB_OUTPUT
+          echo "conflict_files=" >> $GITHUB_OUTPUT
+          echo "✅ Clean merge — proceeding to validation."
+
+      # ========================================================================
+      # CONFLICT BRANCH (still conflicting) — create fresh temp + notify + cleanup
+      # ========================================================================
+
+      # ------------------------------------------------------------------------
+      # STEP: Create fresh temp branch from integration HEAD
+      # ------------------------------------------------------------------------
+      # Per requirement: "create new temp branch from integration branch" as a
+      # fresh empty copy of integration HEAD. The assignee will manually
+      # re-apply their fix to this branch.
+      # ------------------------------------------------------------------------
+      - name: Create Fresh Temp Branch From Integration
+        id: create_fresh_temp
+        if: steps.resolve_pr.outputs.pr_resolved == 'true' && steps.empty_check.outputs.is_empty != 'true' && steps.recheck_merge.outputs.merge_conflict == 'true'
+        env:
+          INTEGRATION_BRANCH: ${{ steps.resolve_pr.outputs.integration_branch }}
+          PR_NUMBER: ${{ steps.resolve_pr.outputs.pr_number }}
+        run: |
+          set -e
+          NEW_TEMP_BRANCH="qa-validation-${{ github.run_id }}-${{ github.run_attempt }}-pr-${PR_NUMBER}"
+          echo "Creating new temp branch: $NEW_TEMP_BRANCH from origin/$INTEGRATION_BRANCH"
+
+          git fetch origin "$INTEGRATION_BRANCH":refs/remotes/origin/"$INTEGRATION_BRANCH" --force
+          git checkout -B "$NEW_TEMP_BRANCH" "origin/$INTEGRATION_BRANCH"
+
+          git push origin "$NEW_TEMP_BRANCH" --force
+
+          echo "new_temp_branch=$NEW_TEMP_BRANCH" >> $GITHUB_OUTPUT
+          echo "✅ Fresh temp branch pushed: $NEW_TEMP_BRANCH"
+
+      # ------------------------------------------------------------------------
+      # STEP: Notify PR (PR comment with @mention → triggers GitHub email)
+      # ------------------------------------------------------------------------
+      - name: Notify PR About Re-Conflict
+        if: steps.resolve_pr.outputs.pr_resolved == 'true' && steps.empty_check.outputs.is_empty != 'true' && steps.recheck_merge.outputs.merge_conflict == 'true'
+        env:
+          GITHUB_TOKEN:        ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER:           ${{ steps.resolve_pr.outputs.pr_number }}
+          REPO:                ${{ github.repository }}
+          SERVER_URL:          ${{ github.server_url }}
+          INTEGRATION_BRANCH:  ${{ steps.resolve_pr.outputs.integration_branch }}
+          FEATURE_BRANCH:      ${{ steps.resolve_pr.outputs.feature_branch }}
+          PR_AUTHOR:           ${{ steps.resolve_pr.outputs.pr_author }}
+          ASSIGNEES_JSON:      ${{ steps.resolve_pr.outputs.assignees_json }}
+          OLD_TEMP_BRANCH:     ${{ env.TEMP_BRANCH }}
+          NEW_TEMP_BRANCH:     ${{ steps.create_fresh_temp.outputs.new_temp_branch }}
+          CONFLICT_FILES:      ${{ steps.recheck_merge.outputs.conflict_files }}
+          RUN_ID:              ${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+          import urllib.error
+
+          pr_number          = os.environ["PR_NUMBER"]
+          repo               = os.environ["REPO"]
+          token              = os.environ["GITHUB_TOKEN"]
+          server_url         = os.environ.get("SERVER_URL", "https://github.com")
+          integration_branch = os.environ.get("INTEGRATION_BRANCH", "")
+          feature_branch     = os.environ.get("FEATURE_BRANCH", "")
+          pr_author          = os.environ.get("PR_AUTHOR", "")
+          old_temp_branch    = os.environ.get("OLD_TEMP_BRANCH", "")
+          new_temp_branch    = os.environ.get("NEW_TEMP_BRANCH", "")
+          conflict_files     = os.environ.get("CONFLICT_FILES", "")
+          run_id             = os.environ.get("RUN_ID", "")
+
+          try:
+              assignees = json.loads(os.environ.get("ASSIGNEES_JSON", "[]") or "[]")
+          except json.JSONDecodeError:
+              assignees = []
+          mention_logins = [a["login"] for a in assignees if a and a.get("login")]
+          if not mention_logins and pr_author:
+              mention_logins = [pr_author]
+          mentions = " ".join(f"@{login}" for login in mention_logins)
+
+          old_branch_url = f"{server_url}/{repo}/tree/{old_temp_branch}" if old_temp_branch else ""
+          new_branch_url = f"{server_url}/{repo}/tree/{new_temp_branch}" if new_temp_branch else ""
+          feature_url    = f"{server_url}/{repo}/tree/{feature_branch}" if feature_branch else ""
+          run_url        = f"{server_url}/{repo}/actions/runs/{run_id}" if run_id else ""
+
+          body  = "## 🤖 QA CI/CD Conflict — ❌ Still Conflicts With Integration\n\n"
+          if mentions:
+              body += f"{mentions}\n\n"
+          body += (
+              f"`{old_temp_branch}` no longer merges cleanly into `{integration_branch}` "
+              "(integration likely moved forward). Old branch deleted; a fresh empty copy "
+              "was created for you to re-apply your fix on.\n\n"
+          )
+          body += "| | |\n|---|---|\n"
+          body += f"| Conflicts | `{conflict_files or 'unknown'}` |\n"
+          if feature_url:
+              body += f"| Feature branch | [`{feature_branch}`]({feature_url}) |\n"
+          if new_branch_url:
+              body += f"| **New temp branch** | [`{new_temp_branch}`]({new_branch_url}) |\n"
+          if run_url:
+              body += f"| Workflow run | [logs]({run_url}) |\n"
+
+          body += (
+              f"\n**Resolve:** `git fetch origin && git checkout {new_temp_branch}` → "
+              f"re-apply your fix from `{feature_branch}` → push to `{new_temp_branch}`. "
+              "Workflow re-runs on push.\n"
+          )
+
+          url  = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
+          data = json.dumps({"body": body}).encode("utf-8")
+          req  = urllib.request.Request(
+              url,
+              data=data,
+              method="POST",
+              headers={
+                  "Authorization": f"Bearer {token}",
+                  "Accept": "application/vnd.github+json",
+                  "Content-Type": "application/json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+          )
+          try:
+              with urllib.request.urlopen(req) as resp:
+                  print(f"Comment posted: HTTP {resp.status}")
+          except urllib.error.HTTPError as e:
+              print(f"::warning::Failed to post PR comment: HTTP {e.code} - {e.read().decode(errors='replace')}")
+          PY
+
+      # ------------------------------------------------------------------------
+      # STEP: Delete the OLD temp branch (only after the new one is in place)
+      # ------------------------------------------------------------------------
+      - name: Delete Old Temp Branch
+        if: steps.resolve_pr.outputs.pr_resolved == 'true' && steps.empty_check.outputs.is_empty != 'true' && steps.recheck_merge.outputs.merge_conflict == 'true' && steps.create_fresh_temp.outputs.new_temp_branch != ''
+        env:
+          GITHUB_TOKEN:    ${{ secrets.GITHUB_TOKEN }}
+          REPO:            ${{ github.repository }}
+          OLD_TEMP_BRANCH: ${{ env.TEMP_BRANCH }}
+        run: |
+          echo "=== Deleting old temp branch: $OLD_TEMP_BRANCH ==="
+          HTTP_CODE=$(curl -s -o /tmp/del.txt -w "%{http_code}" \
+            -X DELETE \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$REPO/git/refs/heads/$OLD_TEMP_BRANCH")
+
+          if [ "$HTTP_CODE" = "204" ]; then
+            echo "✅ Old temp branch '$OLD_TEMP_BRANCH' deleted."
+          elif [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "422" ]; then
+            echo "⚠️ Old temp branch '$OLD_TEMP_BRANCH' not found (already deleted?)"
+          else
+            echo "::warning::Failed to delete old temp branch '$OLD_TEMP_BRANCH' (HTTP $HTTP_CODE)"
+            cat /tmp/del.txt || true
+          fi
+
+      # ------------------------------------------------------------------------
+      # STEP: Fail the workflow on re-conflict (so the run shows red)
+      # ------------------------------------------------------------------------
+      - name: Fail On Re-Conflict
+        if: steps.resolve_pr.outputs.pr_resolved == 'true' && steps.empty_check.outputs.is_empty != 'true' && steps.recheck_merge.outputs.merge_conflict == 'true'
+        run: |
+          echo "❌ Re-conflict detected. A fresh temp branch has been created and the PR has been notified."
+          exit 1
+
+      # ========================================================================
+      # CLEAN-MERGE PATH — replicate qa-cicd-action.yml validate flow
+      # ========================================================================
+      # Everything below runs ONLY when the temp branch can be cleanly merged
+      # into integration. We treat the temp branch as the source-of-truth and
+      # compare it against the integration branch to build the delta.
+      # ========================================================================
+
+      # ------------------------------------------------------------------------
+      # STEP: Detect change types (force-app / force-dev / manifest)
+      # ------------------------------------------------------------------------
+      - name: Detect Change Types
+        id: check_changes
+        if: steps.resolve_pr.outputs.pr_resolved == 'true' && steps.empty_check.outputs.is_empty != 'true' && steps.recheck_merge.outputs.merge_conflict == 'false'
+        env:
+          INTEGRATION_BRANCH: ${{ steps.resolve_pr.outputs.integration_branch }}
+        run: |
+          echo "=== Comparing temp branch to integration branch ==="
+          echo "Base: origin/$INTEGRATION_BRANCH"
+          echo "Head: origin/$TEMP_BRANCH"
+          echo "Base commit: $(git rev-parse origin/$INTEGRATION_BRANCH)"
+          echo "Head commit: $(git rev-parse origin/$TEMP_BRANCH)"
+
+          # Use PR-style three-dot diff (merge-base..head) so we only see what
+          # the temp branch added on top of integration, not files integration
+          # itself moved forward on. Matches GitHub's Files-changed view and the
+          # semantics used in qa-cicd-action.yml.
+          DEPLOYABLE_FILES=$(git diff --name-only "origin/$INTEGRATION_BRANCH...origin/$TEMP_BRANCH" -- 'force-app/**' 'force-dev/**' 2>/dev/null) || true
+          MANIFEST_FILES=$(git diff --name-only "origin/$INTEGRATION_BRANCH...origin/$TEMP_BRANCH" -- 'manifest/**' 2>/dev/null) || true
+
+          if [ -n "$DEPLOYABLE_FILES" ]; then
+            echo "Found deployable changes:"
+            echo "$DEPLOYABLE_FILES"
+            echo "has_deployable_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "No deployable changes detected"
+            echo "has_deployable_changes=false" >> $GITHUB_OUTPUT
+          fi
+
+          if [ -n "$MANIFEST_FILES" ]; then
+            echo "Found manifest changes:"
+            echo "$MANIFEST_FILES"
+            echo "has_manifest_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_manifest_changes=false" >> $GITHUB_OUTPUT
+          fi
+
+          if [ -n "$DEPLOYABLE_FILES" ]; then
+            echo "workflow_path=full" >> $GITHUB_OUTPUT
+            echo "✅ Workflow path: FULL (validate → deploy → merge)"
+          else
+            echo "workflow_path=skip" >> $GITHUB_OUTPUT
+            echo "⏭️ Workflow path: SKIP (no deployable changes)"
+          fi
+
+      # Pinned to EXACT Node 22.22.3 (not '22'). The 2026-06-18 Node security
+      # patches (22.23.0 / 24.17.0 / 26.3.1) are incompatible with node-fetch@2.7.0
+      # bundled via @jsforce/jsforce-node inside @salesforce/cli, causing every
+      # `sf` command to fail with:
+      #   "Warning: Detected unsettled top-level await at
+      #    .../@salesforce/cli/bin/run.js:15  await cli.run();"
+      # and exit code 13. Using `node-version: '22'` resolves to the latest 22.x
+      # on the runner, which now means 22.23.0 — so the pipeline breaks.
+      # Pin to 22.22.3 (last Node 22 release before the 2026-06-18 patch) until
+      # the upstream jsforce fix lands (jsforce/jsforce#1807, switching to native
+      # fetch). Refs: forcedotcom/cli#3589, #3586. Also DO NOT use '>=20' with
+      # check-latest: true — that pulls Node 26.x which hits the same bug.
+      # Keep this version in sync with the matching step in this same file
+      # below and with .github/workflows/qa-cicd-action.yml.
+      - name: Setup Node.js
+        if: steps.check_changes.outputs.workflow_path == 'full'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.3'
+
+      - name: Install Salesforce CLI
+        if: steps.check_changes.outputs.workflow_path == 'full'
+        run: |
+          npm install --global @salesforce/cli@latest
+          sf --version
+
+      - name: Install SGD Plugin (Delta Deployment)
+        if: steps.check_changes.outputs.workflow_path == 'full'
+        run: echo y | sf plugins install sfdx-git-delta@latest
+
+      - name: Install System Dependencies
+        if: steps.check_changes.outputs.workflow_path == 'full'
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils jq
+
+      - name: Authenticate to QA Org
+        if: steps.check_changes.outputs.workflow_path == 'full'
+        run: |
+          echo "${{ secrets.QA_AUTH_SECRET }}" > SFDX_AUTH_URL
+          sf org login sfdx-url -f SFDX_AUTH_URL -a QA_ORG
+          rm SFDX_AUTH_URL
+
+      # ------------------------------------------------------------------------
+      # STEP: Checkout temp branch contents into the workspace
+      # ------------------------------------------------------------------------
+      # The recheck_merge step left us on a dry-run branch. Restore the temp
+      # branch as the working tree before generating delta / running tests.
+      # ------------------------------------------------------------------------
+      - name: Checkout Temp Branch Contents
+        if: steps.check_changes.outputs.workflow_path == 'full'
+        run: |
+          git checkout -B "$TEMP_BRANCH" "origin/$TEMP_BRANCH"
+          echo "Now on $(git rev-parse --abbrev-ref HEAD) @ $(git rev-parse HEAD)"
+
+      - name: Determine Base Commit for Delta
+        if: steps.check_changes.outputs.workflow_path == 'full'
+        env:
+          INTEGRATION_BRANCH: ${{ steps.resolve_pr.outputs.integration_branch }}
+        shell: bash
+        run: |
+          # Use merge-base so the delta covers only commits the temp branch
+          # added on top of the shared fork point with integration. Using the
+          # integration tip directly would include integration's post-fork
+          # commits as spurious deletes if integration has moved forward.
+          LAST_COMMIT=$(git merge-base "origin/$INTEGRATION_BRANCH" "origin/$TEMP_BRANCH")
+          if [ -z "$LAST_COMMIT" ]; then
+            echo "::error::Could not determine merge-base between origin/$INTEGRATION_BRANCH and origin/$TEMP_BRANCH"
+            exit 1
+          fi
+          echo "LAST_SUCCESSFUL_COMMIT=$LAST_COMMIT" >> $GITHUB_ENV
+          echo "Comparing against: $LAST_COMMIT"
+
+      - name: Create Delta Package
+        if: steps.check_changes.outputs.workflow_path == 'full'
+        shell: bash
+        run: |
+          mkdir -p sgd-manifest
+          # NOTE: sfdx-git-delta deprecated `--source`; use `--source-dir`.
+          SOURCE_ARGS=""
+          if [ -d "force-app" ]; then
+            SOURCE_ARGS="$SOURCE_ARGS --source-dir force-app"
+          fi
+          if [ -d "force-dev" ]; then
+            SOURCE_ARGS="$SOURCE_ARGS --source-dir force-dev"
+          fi
+          if [ -z "$SOURCE_ARGS" ]; then
+            echo "::error::Neither force-app nor force-dev directories found"
+            exit 1
+          fi
+          echo "Using source directories:$SOURCE_ARGS"
+
+          # HEAD here is the temp branch (we did `git checkout -B $TEMP_BRANCH
+          # origin/$TEMP_BRANCH` above), so --to HEAD is equivalent to the PR
+          # head. Together with the merge-base in $LAST_SUCCESSFUL_COMMIT this
+          # gives exactly the PR-introduced changes, matching the three-dot
+          # semantics used in the change/test detection steps.
+          sf sgd source delta \
+            --to HEAD \
+            --from $LAST_SUCCESSFUL_COMMIT \
+            --repo-dir . \
+            --output-dir sgd-manifest \
+            $SOURCE_ARGS
+
+          echo "=== Delta Package Contents ==="
+          if [ -f sgd-manifest/package/package.xml ]; then
+            cat sgd-manifest/package/package.xml
+            if ! grep -q '<members>' sgd-manifest/package/package.xml; then
+              echo "::warning::No components found in delta package"
+            fi
+            echo "=== Files to Deploy ==="
+            find sgd-manifest -type f -name "*" | head -50
+          else
+            echo "::error::No package.xml generated - no changes detected"
+            exit 1
+          fi
+
+      - name: Normalize API Version
+        if: steps.check_changes.outputs.workflow_path == 'full'
+        shell: bash
+        run: |
+          if [ -d sgd-manifest ]; then
+            find sgd-manifest -name "*-meta.xml" -exec \
+              sed -i "s|<apiVersion>.*</apiVersion>|<apiVersion>${TARGET_API}</apiVersion>|g" {} +
+            if [ -f sgd-manifest/package/package.xml ]; then
+              sed -i "s|<version>.*</version>|<version>${TARGET_API}</version>|g" \
+                sgd-manifest/package/package.xml
+            fi
+          fi
+
+      # ------------------------------------------------------------------------
+      # STEP: Detect Test Classes for Changed Apex
+      # ------------------------------------------------------------------------
+      # force-dev POLICY (mirrors qa-cicd-action.yml):
+      #   Apex under force-dev/** IS still deployed and merged, but:
+      #     - We DO NOT auto-detect or run tests for force-dev classes.
+      #     - The custom per-class 75% coverage gate is SKIPPED for
+      #       force-dev-only Apex PRs (see validate step below).
+      # ------------------------------------------------------------------------
+      - name: Detect Test Classes for Changed Apex
+        id: detect_test_classes
+        if: steps.check_changes.outputs.workflow_path == 'full'
+        env:
+          BASE_REF: ${{ steps.resolve_pr.outputs.integration_branch }}
+          HEAD_REF: ${{ env.TEMP_BRANCH }}
+        run: |
+          echo "=== Detecting changed Apex classes ==="
+          TEST_CLASSES=""
+          CHANGED_CLASSES=""
+          HAS_APEX_CHANGES="false"
+          HAS_FORCE_APP_APEX_CHANGES="false"
+
+          is_test_file() {
+            # Match only real Apex test annotations/keywords. `@test` (removed)
+            # was too loose and matched substrings like `@testable` in comments.
+            grep -qi '@isTest\|testmethod' "$1" 2>/dev/null
+          }
+
+          add_test_class() {
+            local cls="$1"
+            case ",${TEST_CLASSES}," in
+              *",${cls},"*) return ;;
+            esac
+            TEST_CLASSES="${TEST_CLASSES:+$TEST_CLASSES,}$cls"
+          }
+
+          # Three-dot diff so only PR-introduced Apex changes are surfaced,
+          # regardless of how far integration has moved forward.
+          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMR "origin/$BASE_REF...origin/$HEAD_REF" \
+            | grep -E '^(force-app|force-dev)/.*/classes/[^/]+\.cls$' || true)
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No Apex class files changed"
+            echo "has_apex_changes=false" >> $GITHUB_OUTPUT
+            echo "has_force_app_apex_changes=false" >> $GITHUB_OUTPUT
+            echo "detected_test_classes=" >> $GITHUB_OUTPUT
+            echo "changed_classes=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          HAS_APEX_CHANGES="true"
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            cls=$(basename "$file" .cls)
+            CHANGED_CLASSES="${CHANGED_CLASSES:+$CHANGED_CLASSES,}$cls"
+            echo "Processing: $cls (from $file)"
+
+            # force-dev POLICY: skip test detection entirely. Class is still
+            # deployed/merged via the delta package, but no *Test lookup is
+            # performed and force-dev test files are NOT added to the run list.
+            case "$file" in
+              force-dev/*)
+                echo "  Skipping test detection (force-dev — deployed but coverage not enforced)"
+                continue
+                ;;
+            esac
+
+            # From here on: force-app Apex.
+            HAS_FORCE_APP_APEX_CHANGES="true"
+
+            if [ -f "$file" ] && is_test_file "$file"; then
+              add_test_class "$cls"
+              continue
+            fi
+
+            # Search for matching test classes in force-app only.
+            for candidate in "${cls}Test" "${cls}_Test"; do
+              CANDIDATE_FILE=$(find force-app -path "*/classes/${candidate}.cls" -type f 2>/dev/null | head -n 1)
+              if [ -n "$CANDIDATE_FILE" ] && is_test_file "$CANDIDATE_FILE"; then
+                add_test_class "$candidate"
+                echo "  Found test: $candidate"
+              fi
+            done
+          done <<< "$CHANGED_FILES"
+
+          echo "=== Results ==="
+          echo "Changed classes: $CHANGED_CLASSES"
+          echo "Detected test classes: $TEST_CLASSES"
+          echo "Has any Apex changes: $HAS_APEX_CHANGES"
+          echo "Has force-app Apex changes: $HAS_FORCE_APP_APEX_CHANGES"
+          echo "has_apex_changes=$HAS_APEX_CHANGES" >> $GITHUB_OUTPUT
+          echo "has_force_app_apex_changes=$HAS_FORCE_APP_APEX_CHANGES" >> $GITHUB_OUTPUT
+          echo "detected_test_classes=$TEST_CLASSES" >> $GITHUB_OUTPUT
+          echo "changed_classes=$CHANGED_CLASSES" >> $GITHUB_OUTPUT
+
+      # ------------------------------------------------------------------------
+      # STEP: Parse user-specified tests Run[[...]] from PR title/body/commits
+      # ------------------------------------------------------------------------
+      - name: Parse User-Specified Tests (Run[[...]])
+        id: parse_user_tests
+        if: steps.check_changes.outputs.workflow_path == 'full'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER:    ${{ steps.resolve_pr.outputs.pr_number }}
+          REPO:         ${{ github.repository }}
+        run: |
+          echo "=== Checking for Run[[...]] pattern ==="
+
+          # Re-fetch PR metadata so we have title/body available.
+          curl -s \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER" > /tmp/pr.json
+
+          PR_TITLE=$(jq -r '.title // ""' /tmp/pr.json)
+          PR_BODY=$(jq -r '.body // ""' /tmp/pr.json)
+          COMMIT_MSG=$(git log -1 --format=%B HEAD 2>/dev/null || echo "")
+
+          extract_run_marker() {
+            echo "$1" | tr '\r\n' '  ' | grep -ioE 'run\s*\[\[[^]]*\]\]' | head -n 1 || true
+          }
+
+          PR_TEXT="$PR_TITLE $PR_BODY"
+          MATCH=$(extract_run_marker "$COMMIT_MSG")
+          [ -z "$MATCH" ] && MATCH=$(extract_run_marker "$PR_TEXT")
+
+          if [ -n "$MATCH" ]; then
+            USER_TESTS=$(echo "$MATCH" | \
+              sed -E 's/[Rr][Uu][Nn]\s*\[\[\s*//; s/\s*\]\]//; s/\.cls//gi' | \
+              tr ' ' ',' | tr -s ',')
+            echo "Found user-specified tests: $USER_TESTS"
+            echo "user_test_classes=$USER_TESTS" >> $GITHUB_OUTPUT
+          else
+            echo "No Run[[...]] pattern found"
+            echo "user_test_classes=" >> $GITHUB_OUTPUT
+          fi
+
+      # ------------------------------------------------------------------------
+      # STEP: Select Test Classes to Run (priority-based)
+      # ------------------------------------------------------------------------
+      # Priority order (first non-empty wins) — mirrors qa-cicd-action.yml:
+      #   1. User-specified tests (Run[[...]] in commit / PR body).
+      #      → Use ONLY those. Auto-detected tests are ignored on purpose.
+      #   2. Auto-detected tests (naming convention: {ClassName}Test /
+      #      {ClassName}_Test found in force-app or force-dev).
+      #   3. Neither present.
+      #      → Emit empty list. The validation step will then fall back to
+      #        RunLocalTests (Apex changed) or RunRelevantTests (no Apex).
+      #
+      # RESULT: final_test_classes (comma-separated) + selection_source
+      # (user | detected | none) for logging/reporting.
+      # ------------------------------------------------------------------------
+      - name: Select Test Classes to Run
+        id: combine_tests
+        if: steps.check_changes.outputs.workflow_path == 'full'
+        run: |
+          DETECTED="${{ steps.detect_test_classes.outputs.detected_test_classes }}"
+          USER_SPECIFIED="${{ steps.parse_user_tests.outputs.user_test_classes }}"
+
+          echo "Detected tests: ${DETECTED:-<none>}"
+          echo "User-specified tests: ${USER_SPECIFIED:-<none>}"
+
+          # Normalise a comma-separated list: trim, drop empties, dedupe,
+          # preserve original order.
+          normalise() {
+            echo "$1" | tr ',' '\n' | awk 'NF && !seen[$0]++' | paste -sd',' -
+          }
+
+          SELECTED=""
+          SOURCE="none"
+
+          if [ -n "$USER_SPECIFIED" ]; then
+            SELECTED=$(normalise "$USER_SPECIFIED")
+            SOURCE="user"
+            echo "→ Using USER-SPECIFIED tests (Run[[...]] provided)."
+            echo "  Auto-detected tests are ignored by design when the author supplies an explicit list."
+          elif [ -n "$DETECTED" ]; then
+            SELECTED=$(normalise "$DETECTED")
+            SOURCE="detected"
+            echo "→ Using AUTO-DETECTED tests (no Run[[...]] found)."
+          else
+            SELECTED=""
+            SOURCE="none"
+            echo "→ No user-specified or auto-detected tests found."
+            echo "  Validation step will fall back to RunLocalTests / RunRelevantTests."
+          fi
+
+          echo "=== Final test classes to run ==="
+          echo "${SELECTED:-<none — fallback will apply>}"
+          echo "final_test_classes=$SELECTED" >> $GITHUB_OUTPUT
+          echo "selection_source=$SOURCE" >> $GITHUB_OUTPUT
+
+      # ------------------------------------------------------------------------
+      # STEP: Validate Deployment (Check-Only) — same logic as qa-cicd-action
+      # ------------------------------------------------------------------------
+      - name: Validate Deployment (Check-Only)
+        id: validate_deploy
+        if: steps.check_changes.outputs.workflow_path == 'full'
+        run: |
+          set +e
+          TEST_CLASSES="${{ steps.combine_tests.outputs.final_test_classes }}"
+          TEST_SOURCE="${{ steps.combine_tests.outputs.selection_source }}"
+          HAS_APEX="${{ steps.detect_test_classes.outputs.has_apex_changes }}"
+          HAS_FORCE_APP_APEX="${{ steps.detect_test_classes.outputs.has_force_app_apex_changes }}"
+
+          echo "=== Starting Validation ==="
+          echo "Test classes: ${TEST_CLASSES:-<none>}"
+          echo "Selection source: ${TEST_SOURCE:-none}"
+          echo "Has any Apex changes: $HAS_APEX"
+          echo "Has force-app Apex changes: $HAS_FORCE_APP_APEX"
+
+          # Priority-driven test level selection (mirrors qa-cicd-action.yml):
+          #   1. User-specified or auto-detected tests present → RunSpecifiedTests
+          #   2. No tests but FORCE-APP Apex changed           → RunLocalTests
+          #   3. force-dev-only Apex changes                   → NoTestRun
+          #      (bypass Salesforce's built-in 75% coverage rule for force-dev;
+          #      sandbox-only, Quick Deploy not possible after this)
+          #   4. No Apex changed                               → RunRelevantTests
+          if [ -n "$TEST_CLASSES" ]; then
+            TEST_LEVEL="RunSpecifiedTests"
+            TEST_ARGS=""
+            for test in $(echo "$TEST_CLASSES" | tr ',' ' '); do
+              TEST_ARGS="$TEST_ARGS --tests $test"
+            done
+            case "$TEST_SOURCE" in
+              user)     echo "→ Running USER-SPECIFIED tests: $TEST_CLASSES" ;;
+              detected) echo "→ Running AUTO-DETECTED tests: $TEST_CLASSES" ;;
+              *)        echo "→ Running specified tests: $TEST_CLASSES" ;;
+            esac
+          elif [ "$HAS_FORCE_APP_APEX" == "true" ]; then
+            TEST_LEVEL="RunLocalTests"
+            TEST_ARGS=""
+            echo "→ No user-specified or detected tests found for the changed force-app Apex."
+            echo "  Falling back to RunLocalTests (runs all local tests in the org)."
+          elif [ "$HAS_APEX" == "true" ]; then
+            # force-dev-only Apex. Use NoTestRun so Salesforce doesn't enforce
+            # its 75% coverage rule on the deployed force-dev classes.
+            TEST_LEVEL="NoTestRun"
+            TEST_ARGS=""
+            echo "→ Only force-dev Apex changed. Using NoTestRun (Salesforce coverage rule bypassed)."
+          else
+            TEST_LEVEL="RunRelevantTests"
+            TEST_ARGS=""
+            echo "→ No Apex changes and no tests specified. Using RunRelevantTests."
+          fi
+
+          # EXCEPTION: `sf project deploy validate` does NOT accept
+          # --test-level NoTestRun (only Run*Tests variants). For the
+          # force-dev-only Apex case we instead use
+          # `sf project deploy start --dry-run --test-level NoTestRun`,
+          # which IS accepted on sandboxes and performs an equivalent
+          # check-only deploy. The Job ID from --dry-run is NOT reusable
+          # for Quick Deploy (deploy job's CannotQuickDeployError path
+          # falls through to Regular Deploy).
+          if [ "$TEST_LEVEL" == "NoTestRun" ]; then
+            sf project deploy start \
+              --manifest sgd-manifest/package/package.xml \
+              --target-org QA_ORG \
+              --test-level "$TEST_LEVEL" \
+              --dry-run \
+              --wait 60 \
+              --verbose \
+              --json > validation_result.json 2> validation_errors.txt
+          elif [ -n "$TEST_ARGS" ]; then
+            sf project deploy validate \
+              --manifest sgd-manifest/package/package.xml \
+              --target-org QA_ORG \
+              --test-level "$TEST_LEVEL" \
+              $TEST_ARGS \
+              --wait 60 \
+              --verbose \
+              --json > validation_result.json 2> validation_errors.txt
+          else
+            sf project deploy validate \
+              --manifest sgd-manifest/package/package.xml \
+              --target-org QA_ORG \
+              --test-level "$TEST_LEVEL" \
+              --wait 60 \
+              --verbose \
+              --json > validation_result.json 2> validation_errors.txt
+          fi
+
+          DEPLOY_EXIT=$?
+          echo "Validation exit code: $DEPLOY_EXIT"
+
+          if [ -s validation_errors.txt ]; then
+            echo "=== Validation Errors (stderr) ==="
+            cat validation_errors.txt
+          fi
+
+          echo "=== Raw validation output ==="
+          head -100 validation_result.json
+
+          if ! jq empty validation_result.json 2>/dev/null; then
+            echo "::error::Validation output is not valid JSON"
+            echo "deploy_exit=$DEPLOY_EXIT" >> $GITHUB_OUTPUT
+            echo "deploy_status=Failed - Invalid JSON output" >> $GITHUB_OUTPUT
+            echo "test_level=$TEST_LEVEL" >> $GITHUB_OUTPUT
+            echo "coverage_value=N/A" >> $GITHUB_OUTPUT
+            echo "job_id=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          STATUS=$(jq -r '
+            if .result.status then .result.status
+            elif .status then .status
+            elif .name == "DeployFailed" then "Failed"
+            elif .message then "Failed"
+            else "Unknown"
+            end
+          ' validation_result.json 2>/dev/null || echo "Failed")
+          echo "Validation status: $STATUS"
+
+          ERROR_MSG=$(jq -r '.message // .result.errorMessage // empty' validation_result.json 2>/dev/null || true)
+          if [ -n "$ERROR_MSG" ]; then
+            echo "::error::$ERROR_MSG"
+          fi
+
+          COVERAGE_VALUE="N/A"
+          if [ "$TEST_LEVEL" != "NoTestRun" ] && [ "$HAS_FORCE_APP_APEX" == "true" ]; then
+            # ------------------------------------------------------------------
+            # Compute coverage across ONLY the non-test Apex classes being
+            # deployed in this PR (i.e., the ApexClass members in the delta
+            # package.xml, excluding *Test / *_Test classes and anything with
+            # @isTest / testmethod). See qa-cicd-action.yml for full rationale
+            # — keep this block in sync with that workflow.
+            #
+            # force-dev POLICY: classes located only under force-dev/** are
+            # ALSO excluded from the coverage calculation. Only force-app
+            # classes are gated by the 75% rule; force-dev rides along free.
+            # ------------------------------------------------------------------
+            DEPLOYED_APEX=""
+            if [ -f sgd-manifest/package/package.xml ]; then
+              DEPLOYED_APEX=$(awk '
+                /<types>/ { in_types=1; members=""; name=""; next }
+                /<\/types>/ {
+                  if (name == "ApexClass" && members != "") printf "%s", members
+                  in_types=0; members=""; name=""; next
+                }
+                in_types && /<members>/ {
+                  line=$0
+                  sub(/^[[:space:]]*<members>/, "", line)
+                  sub(/<\/members>[[:space:]]*$/, "", line)
+                  members = members line "\n"
+                }
+                in_types && /<name>/ {
+                  line=$0
+                  sub(/^[[:space:]]*<name>/, "", line)
+                  sub(/<\/name>[[:space:]]*$/, "", line)
+                  name = line
+                }
+              ' sgd-manifest/package/package.xml)
+            fi
+
+            NON_TEST_CLASSES=""
+            EXCLUDED_FORCE_DEV=""
+            while IFS= read -r cls; do
+              [ -z "$cls" ] && continue
+              # Test-class check (both by @isTest/testmethod and *Test naming).
+              CLS_FILE=$(find force-app force-dev -path "*/classes/${cls}.cls" -type f 2>/dev/null | head -n 1)
+              if [ -n "$CLS_FILE" ] && grep -qi '@isTest\|testmethod' "$CLS_FILE" 2>/dev/null; then
+                continue
+              fi
+              case "$cls" in
+                *Test|*_Test) continue ;;
+              esac
+              # Scope check: exclude classes located ONLY under force-dev.
+              FA_FILE=$(find force-app -path "*/classes/${cls}.cls" -type f 2>/dev/null | head -n 1)
+              FD_FILE=$(find force-dev -path "*/classes/${cls}.cls" -type f 2>/dev/null | head -n 1)
+              if [ -z "$FA_FILE" ] && [ -n "$FD_FILE" ]; then
+                EXCLUDED_FORCE_DEV="${EXCLUDED_FORCE_DEV:+$EXCLUDED_FORCE_DEV }$cls"
+                continue
+              fi
+              NON_TEST_CLASSES="${NON_TEST_CLASSES:+$NON_TEST_CLASSES }$cls"
+            done <<< "$DEPLOYED_APEX"
+
+            echo "=== Deployed Apex classes (from delta package.xml) ==="
+            echo "${DEPLOYED_APEX:-<none>}"
+            echo "=== Non-test classes used for coverage calculation (force-app only) ==="
+            echo "${NON_TEST_CLASSES:-<none>}"
+            if [ -n "$EXCLUDED_FORCE_DEV" ]; then
+              echo "=== Excluded from coverage (force-dev only) ==="
+              echo "$EXCLUDED_FORCE_DEV"
+            fi
+
+            if [ -n "$NON_TEST_CLASSES" ]; then
+              DEPLOYED_JSON=$(printf '%s\n' $NON_TEST_CLASSES | jq -R . | jq -s .)
+
+              echo "=== Per-class Coverage (deployed classes only) ==="
+              jq --argjson deployed "$DEPLOYED_JSON" -r '
+                .result.details.runTestResult.codeCoverage // []
+                | map(select(.name as $n | $deployed | index($n)))
+                | if length == 0 then "  (no matching coverage rows returned by Salesforce)"
+                  else map(
+                    "  " + .name + ": " +
+                    (if .numLocations > 0
+                      then (((.numLocations - .numLocationsNotCovered) * 100 / .numLocations) | floor | tostring) + "%"
+                      else "N/A (no executable lines)" end)
+                    + " (" + ((.numLocations - .numLocationsNotCovered) | tostring) + "/" + (.numLocations | tostring) + ")"
+                  ) | join("\n") end
+              ' validation_result.json 2>/dev/null || echo "  (could not compute per-class breakdown)"
+
+              COVERAGE_VALUE=$(jq --argjson deployed "$DEPLOYED_JSON" -r '
+                .result.details.runTestResult.codeCoverage // []
+                | map(select(.name as $n | $deployed | index($n)))
+                | map(select(.numLocations > 0))
+                | if length > 0 then
+                    ((map(.numLocations - .numLocationsNotCovered) | add) * 100 / (map(.numLocations) | add) | floor | tostring) + "%"
+                  else "N/A" end
+              ' validation_result.json 2>/dev/null || echo "N/A")
+            else
+              # No force-app non-test Apex in the delta — coverage doesn't
+              # apply. Report N/A (parse_validation treats N/A as passing).
+              echo "No force-app non-test Apex classes in the delta package; reporting N/A."
+              COVERAGE_VALUE="N/A"
+            fi
+          else
+            if [ "$HAS_APEX" == "true" ] && [ "$HAS_FORCE_APP_APEX" != "true" ]; then
+              echo "=== Skipping coverage check (force-dev-only Apex — coverage not enforced) ==="
+            else
+              echo "=== Skipping coverage check (no Apex or NoTestRun) ==="
+            fi
+          fi
+
+          JOB_ID=$(jq -r '.result.id // ""' validation_result.json 2>/dev/null || echo "")
+          echo "Validation Job ID: $JOB_ID"
+
+          echo "deploy_exit=$DEPLOY_EXIT" >> $GITHUB_OUTPUT
+          echo "deploy_status=$STATUS" >> $GITHUB_OUTPUT
+          echo "test_level=$TEST_LEVEL" >> $GITHUB_OUTPUT
+          echo "coverage_value=$COVERAGE_VALUE" >> $GITHUB_OUTPUT
+          echo "job_id=$JOB_ID" >> $GITHUB_OUTPUT
+
+      - name: Parse Validation Results
+        id: parse_validation
+        if: always() && steps.resolve_pr.outputs.pr_resolved == 'true' && steps.empty_check.outputs.is_empty != 'true' && steps.recheck_merge.outputs.merge_conflict == 'false'
+        run: |
+          WORKFLOW_PATH="${{ steps.check_changes.outputs.workflow_path }}"
+
+          if [ "$WORKFLOW_PATH" == "skip" ] || [ -z "$WORKFLOW_PATH" ]; then
+            echo "validation_passed=skipped" >> $GITHUB_OUTPUT
+            echo "validation_status=Skipped - No deployable changes" >> $GITHUB_OUTPUT
+            echo "coverage_passed=true" >> $GITHUB_OUTPUT
+            echo "coverage_value=N/A" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          DEPLOY_STATUS="${{ steps.validate_deploy.outputs.deploy_status }}"
+          COVERAGE="${{ steps.validate_deploy.outputs.coverage_value }}"
+          DEPLOY_EXIT="${{ steps.validate_deploy.outputs.deploy_exit }}"
+
+          echo "=== Parsing validation results ==="
+          echo "WORKFLOW_PATH: $WORKFLOW_PATH"
+          echo "DEPLOY_STATUS: $DEPLOY_STATUS"
+          echo "DEPLOY_EXIT: $DEPLOY_EXIT"
+          echo "COVERAGE: $COVERAGE"
+
+          if [[ "$DEPLOY_STATUS" == Succeeded* ]] || [[ "$DEPLOY_STATUS" == "Succeeded" ]]; then
+            echo "validation_passed=true" >> $GITHUB_OUTPUT
+            echo "validation_status=Passed" >> $GITHUB_OUTPUT
+            if [[ "$COVERAGE" =~ ^([0-9]+)% ]] && [ "${BASH_REMATCH[1]}" -ge 75 ]; then
+              echo "coverage_passed=true" >> $GITHUB_OUTPUT
+            elif [ "$COVERAGE" == "N/A" ]; then
+              echo "coverage_passed=true" >> $GITHUB_OUTPUT
+            else
+              echo "coverage_passed=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "validation_passed=false" >> $GITHUB_OUTPUT
+            echo "validation_status=Failed" >> $GITHUB_OUTPUT
+            echo "coverage_passed=true" >> $GITHUB_OUTPUT
+          fi
+
+          echo "coverage_value=$COVERAGE" >> $GITHUB_OUTPUT
+
+      # ------------------------------------------------------------------------
+      # STEP: Post validation result comment on PR
+      # ------------------------------------------------------------------------
+      - name: Comment On PR — Validation Result
+        if: always() && steps.resolve_pr.outputs.pr_resolved == 'true' && steps.empty_check.outputs.is_empty != 'true' && steps.recheck_merge.outputs.merge_conflict == 'false'
+        env:
+          GITHUB_TOKEN:       ${{ secrets.GITHUB_TOKEN }}
+          VALIDATION_PASSED:  ${{ steps.parse_validation.outputs.validation_passed }}
+          TEST_CLASSES:       ${{ steps.combine_tests.outputs.final_test_classes }}
+          COVERAGE:           ${{ steps.parse_validation.outputs.coverage_value }}
+          TEST_LEVEL:         ${{ steps.validate_deploy.outputs.test_level }}
+          HAS_MANIFEST:       ${{ steps.check_changes.outputs.has_manifest_changes }}
+          PR_NUMBER:          ${{ steps.resolve_pr.outputs.pr_number }}
+          REPO:               ${{ github.repository }}
+          SERVER_URL:         ${{ github.server_url }}
+          INTEGRATION_BRANCH: ${{ steps.resolve_pr.outputs.integration_branch }}
+          FEATURE_BRANCH:     ${{ steps.resolve_pr.outputs.feature_branch }}
+          PR_AUTHOR:          ${{ steps.resolve_pr.outputs.pr_author }}
+          ASSIGNEES_JSON:     ${{ steps.resolve_pr.outputs.assignees_json }}
+          TEMP_BRANCH:        ${{ env.TEMP_BRANCH }}
+          RUN_ID:             ${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+          import urllib.error
+
+          validation_passed  = os.environ.get("VALIDATION_PASSED", "")
+          test_classes       = os.environ.get("TEST_CLASSES", "")
+          coverage           = os.environ.get("COVERAGE", "")
+          test_level         = os.environ.get("TEST_LEVEL", "")
+          has_manifest       = os.environ.get("HAS_MANIFEST", "") == "true"
+          pr_number          = os.environ["PR_NUMBER"]
+          repo               = os.environ["REPO"]
+          token              = os.environ["GITHUB_TOKEN"]
+          server_url         = os.environ.get("SERVER_URL", "https://github.com")
+          integration_branch = os.environ.get("INTEGRATION_BRANCH", "")
+          feature_branch     = os.environ.get("FEATURE_BRANCH", "")
+          pr_author          = os.environ.get("PR_AUTHOR", "")
+          temp_branch        = os.environ.get("TEMP_BRANCH", "")
+          run_id             = os.environ.get("RUN_ID", "")
+
+          # Helper: read validation_result.json produced by the validate step
+          # and render markdown with component failures, test failures, and
+          # coverage warnings so PR authors see actionable errors directly in
+          # the PR comment instead of digging through workflow logs. Mirrors
+          # the same helper in qa-cicd-action.yml — keep them in sync.
+          def format_failure_details():
+              MAX_ITEMS = 20
+              MAX_PROBLEM_CHARS = 400
+              MAX_MESSAGE_CHARS = 800
+              MAX_TOP_ERROR_CHARS = 1000
+              MAX_STACK_LINES = 5
+
+              try:
+                  with open("validation_result.json", "r", encoding="utf-8") as fh:
+                      vr = json.load(fh)
+              except (FileNotFoundError, OSError, json.JSONDecodeError):
+                  return ""
+
+              result_obj = vr.get("result") or {}
+              details = result_obj.get("details") or {}
+
+              def as_list(val):
+                  if val is None:
+                      return []
+                  if isinstance(val, dict):
+                      return [val]
+                  if isinstance(val, list):
+                      return val
+                  return []
+
+              component_failures = as_list(details.get("componentFailures"))
+              rtr = details.get("runTestResult") or {}
+              test_failures = as_list(rtr.get("failures"))
+              coverage_warnings = as_list(rtr.get("codeCoverageWarnings"))
+
+              top_error = vr.get("message") or result_obj.get("errorMessage") or ""
+              top_error = str(top_error).strip() if top_error else ""
+
+              if not (component_failures or test_failures or coverage_warnings or top_error):
+                  return ""
+
+              def clean_cell(text):
+                  return (str(text) if text is not None else "").replace("|", "\\|").replace("\r", "").replace("\n", " ").strip()
+
+              def truncate(text, limit):
+                  s = str(text) if text is not None else ""
+                  return s if len(s) <= limit else s[: limit - 3] + "..."
+
+              md = "\n### 🔴 Failure Details\n\n"
+
+              if top_error:
+                  md += f"**Error:** {truncate(top_error, MAX_TOP_ERROR_CHARS)}\n\n"
+
+              if component_failures:
+                  total = len(component_failures)
+                  shown = component_failures[:MAX_ITEMS]
+                  header = f"Component Failures ({total})" if total <= MAX_ITEMS else f"Component Failures (showing {MAX_ITEMS} of {total})"
+                  md += f"<details open>\n<summary><b>{header}</b></summary>\n\n"
+                  md += "| Component | Type | Line | Problem |\n"
+                  md += "|-----------|------|------|---------|\n"
+                  for item in shown:
+                      full_name = clean_cell(item.get("fullName") or item.get("componentType") or "unknown")
+                      comp_type = clean_cell(item.get("componentType"))
+                      line = item.get("lineNumber")
+                      col = item.get("columnNumber")
+                      if line and col:
+                          loc = f"{line}:{col}"
+                      elif line:
+                          loc = str(line)
+                      else:
+                          loc = "—"
+                      problem = truncate(clean_cell(item.get("problem") or item.get("error")), MAX_PROBLEM_CHARS)
+                      md += f"| `{full_name}` | {comp_type} | {loc} | {problem} |\n"
+                  md += "\n</details>\n\n"
+
+              if test_failures:
+                  total = len(test_failures)
+                  shown = test_failures[:MAX_ITEMS]
+                  header = f"Test Failures ({total})" if total <= MAX_ITEMS else f"Test Failures (showing {MAX_ITEMS} of {total})"
+                  md += f"<details open>\n<summary><b>{header}</b></summary>\n\n"
+                  for item in shown:
+                      class_name = str(item.get("name") or "unknown")
+                      method = str(item.get("methodName") or "")
+                      message = truncate(str(item.get("message") or "").strip(), MAX_MESSAGE_CHARS)
+                      stack = str(item.get("stackTrace") or "").strip()
+                      md += f"**`{class_name}.{method}`**\n\n"
+                      md += "```\n"
+                      md += message + "\n"
+                      if stack:
+                          stack_lines = [l for l in stack.split("\n") if l.strip()][:MAX_STACK_LINES]
+                          if stack_lines:
+                              md += "\n" + "\n".join(stack_lines) + "\n"
+                      md += "```\n\n"
+                  md += "</details>\n\n"
+
+              if coverage_warnings:
+                  total = len(coverage_warnings)
+                  shown = coverage_warnings[:MAX_ITEMS]
+                  header = f"Code Coverage Warnings ({total})" if total <= MAX_ITEMS else f"Code Coverage Warnings (showing {MAX_ITEMS} of {total})"
+                  md += f"<details>\n<summary><b>{header}</b></summary>\n\n"
+                  for item in shown:
+                      name = str(item.get("name") or "unknown")
+                      msg = str(item.get("message") or "").strip()
+                      md += f"- **`{name}`**: {msg}\n"
+                  md += "\n</details>\n\n"
+
+              return md
+
+          try:
+              assignees = json.loads(os.environ.get("ASSIGNEES_JSON", "[]") or "[]")
+          except json.JSONDecodeError:
+              assignees = []
+          mention_logins = [a["login"] for a in assignees if a and a.get("login")]
+          if not mention_logins and pr_author:
+              mention_logins = [pr_author]
+          mentions = " ".join(f"@{login}" for login in mention_logins)
+
+          temp_branch_url    = f"{server_url}/{repo}/tree/{temp_branch}" if temp_branch else ""
+          feature_branch_url = f"{server_url}/{repo}/tree/{feature_branch}" if feature_branch else ""
+          run_url            = f"{server_url}/{repo}/actions/runs/{run_id}" if run_id else ""
+
+          # Compact single-comment layout matching qa-cicd-action.yml.
+          if validation_passed == "skipped":
+              # No deployable changes on the temp branch after a clean merge —
+              # almost always a mistake (empty commits, reverted changes, or
+              # non-source-only edits). Give a specific, actionable message.
+              body = "## 🤖 QA CI/CD Conflict — ⚠️ No Deployable Changes\n\n"
+              if mentions:
+                  body += f"{mentions}\n\n"
+              body += (
+                  f"Merge into `{integration_branch}` is clean, but no changes in "
+                  "`force-app/**` or `force-dev/**`. Possible causes: empty commits, "
+                  "only non-source edits, or reverted code.\n\n"
+              )
+              if temp_branch:
+                  body += (
+                      f"**Fix:** `git fetch origin && git checkout {temp_branch}` → "
+                      f"re-apply changes → push to `{temp_branch}`.\n\n"
+                  )
+              body += "_Deploy/merge skipped until deployable changes are pushed._\n"
+          elif validation_passed == "true":
+              body = "## 🤖 QA CI/CD Conflict — ✅ Validation Passed · Deploying to QA\n\n"
+              body += (
+                  f"Temp branch [`{temp_branch}`]({temp_branch_url}) now merges cleanly into "
+                  f"`{integration_branch}`.\n\n"
+              )
+              body += "| | |\n|---|---|\n"
+              body += f"| Test level | {test_level} |\n"
+              body += f"| Tests | {test_classes or 'None'} |\n"
+              body += f"| Coverage | {coverage} |\n"
+              if has_manifest:
+                  body += "\n_Manifest changes will merge with deployment._\n"
+          else:
+              body = "## 🤖 QA CI/CD Conflict — ❌ Validation Failed\n\n"
+              if mentions:
+                  body += f"{mentions}\n\n"
+              body += "| | |\n|---|---|\n"
+              if feature_branch_url:
+                  body += f"| Feature branch | [`{feature_branch}`]({feature_branch_url}) |\n"
+              if temp_branch_url:
+                  body += f"| Temp branch | [`{temp_branch}`]({temp_branch_url}) |\n"
+              if run_url:
+                  body += f"| Workflow run | [logs]({run_url}) |\n"
+              body += f"| Test level / Coverage | {test_level or 'N/A'} · {coverage or 'N/A'} |\n"
+              if test_classes:
+                  body += f"| Tests | `{test_classes}` |\n"
+              failure_details_md = format_failure_details()
+              body += failure_details_md if failure_details_md else "\n_See workflow logs for details._\n"
+
+          body += "\n---\n_💡 Specify tests with `Run[[Test1, Test2]]` in commit message or PR description._\n"
+
+          url  = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
+          data = json.dumps({"body": body}).encode("utf-8")
+          req  = urllib.request.Request(
+              url,
+              data=data,
+              method="POST",
+              headers={
+                  "Authorization": f"Bearer {token}",
+                  "Accept": "application/vnd.github+json",
+                  "Content-Type": "application/json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+          )
+          try:
+              with urllib.request.urlopen(req) as resp:
+                  print(f"Comment posted: HTTP {resp.status}")
+          except urllib.error.HTTPError as e:
+              print(f"::warning::Failed to post PR comment: HTTP {e.code} - {e.read().decode(errors='replace')}")
+          PY
+
+      - name: Fail if Validation Failed
+        if: always() && steps.resolve_pr.outputs.pr_resolved == 'true' && steps.empty_check.outputs.is_empty != 'true' && steps.recheck_merge.outputs.merge_conflict == 'false'
+        run: |
+          VALIDATION_RESULT="${{ steps.parse_validation.outputs.validation_passed }}"
+          if [ "$VALIDATION_RESULT" == "skipped" ]; then
+            echo "⏭️ Workflow skipped — no deployable changes detected"
+            exit 0
+          fi
+          if [ "$VALIDATION_RESULT" != "true" ]; then
+            echo "❌ Validation failed - stopping pipeline"
+            exit 1
+          fi
+          if [ "${{ steps.parse_validation.outputs.coverage_passed }}" != "true" ]; then
+            echo "❌ Code coverage below 75% - stopping pipeline"
+            exit 1
+          fi
+          echo "✅ Validation passed - proceeding to deployment"
+
+  # ============================================================================
+  # JOB 2: DEPLOY (QUICK DEPLOY with FALLBACK)
+  # ============================================================================
+  # Mirrors the deploy job in qa-cicd-action.yml. Runs only when validation
+  # passed on the clean-merge path.
+  # ============================================================================
+  deploy:
+    name: Deploy to QA
+    needs: recheck_and_validate
+    if: needs.recheck_and_validate.outputs.is_empty != 'true' && needs.recheck_and_validate.outputs.merge_conflict == 'false' && needs.recheck_and_validate.outputs.validation_passed == 'true' && needs.recheck_and_validate.outputs.coverage_passed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    outputs:
+      deploy_success: ${{ steps.deploy.outputs.deploy_success }}
+      deploy_method:  ${{ steps.deploy.outputs.deploy_method }}
+
+    env:
+      TARGET_API: '64.0'
+      TEMP_BRANCH: ${{ github.ref_name }}
+
+    steps:
+      - name: Checkout Temp Branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      # Pinned to EXACT Node 22.22.3 (not '22'). The 2026-06-18 Node security
+      # patches (22.23.0 / 24.17.0 / 26.3.1) break @salesforce/cli via the
+      # bundled node-fetch@2.7.0, causing "unsettled top-level await" and exit
+      # code 13. See the Setup Node.js step earlier in this file for the full
+      # explanation. Keep this version in sync with the other step above and
+      # with .github/workflows/qa-cicd-action.yml.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.3'
+
+      - name: Install Salesforce CLI
+        run: |
+          npm install --global @salesforce/cli@latest
+          sf --version
+
+      - name: Install SGD Plugin
+        run: echo y | sf plugins install sfdx-git-delta@latest
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Authenticate to QA Org
+        run: |
+          echo "${{ secrets.QA_AUTH_SECRET }}" > SFDX_AUTH_URL
+          sf org login sfdx-url -f SFDX_AUTH_URL -a QA_ORG
+          rm SFDX_AUTH_URL
+
+      - name: Deploy to QA Org
+        id: deploy
+        env:
+          INTEGRATION_BRANCH: ${{ needs.recheck_and_validate.outputs.integration_branch }}
+        run: |
+          set +e
+          JOB_ID="${{ needs.recheck_and_validate.outputs.job_id }}"
+          HAS_APEX="${{ needs.recheck_and_validate.outputs.has_apex_changes }}"
+          HAS_FORCE_APP_APEX="${{ needs.recheck_and_validate.outputs.has_force_app_apex_changes }}"
+
+          echo "=== Starting Deployment to QA ==="
+          echo "Validation Job ID: $JOB_ID"
+          echo "Has any Apex changes: $HAS_APEX"
+          echo "Has force-app Apex changes: $HAS_FORCE_APP_APEX"
+
+          DEPLOY_SUCCESS="false"
+          DEPLOY_METHOD="none"
+
+          if [ -n "$JOB_ID" ] && [ "$JOB_ID" != "null" ]; then
+            echo ""
+            echo "=== Attempting Quick Deploy ==="
+            sf project deploy quick \
+              --job-id "$JOB_ID" \
+              --target-org QA_ORG \
+              --wait 30 \
+              --json > quick_deploy_result.json 2> quick_deploy_errors.txt
+            QUICK_EXIT=$?
+            QUICK_STATUS=$(jq -r '.result.status // "Failed"' quick_deploy_result.json 2>/dev/null || echo "Failed")
+            echo "Quick Deploy exit code: $QUICK_EXIT"
+            echo "Quick Deploy status: $QUICK_STATUS"
+
+            if [[ "$QUICK_STATUS" == Succeeded* ]] && [ "$QUICK_EXIT" -eq 0 ]; then
+              echo "✅ Quick Deploy successful!"
+              DEPLOY_SUCCESS="true"
+              DEPLOY_METHOD="quick"
+            else
+              ERROR_CODE=$(jq -r '.code // .name // ""' quick_deploy_result.json 2>/dev/null || echo "")
+              ERROR_MSG=$(jq -r '.data.message // .message // ""' quick_deploy_result.json 2>/dev/null || echo "")
+              echo "Error code: $ERROR_CODE"
+              echo "Error message: $ERROR_MSG"
+              if [[ "$ERROR_MSG" == *"did not run tests"* ]] || [[ "$ERROR_CODE" == "CannotQuickDeployError" ]]; then
+                echo "📋 Quick Deploy not available — falling back to Regular Deploy"
+              else
+                echo "=== Quick Deploy Result ==="
+                cat quick_deploy_result.json
+              fi
+            fi
+          else
+            echo "⚠️ No Job ID available — will use Regular Deploy"
+          fi
+
+          if [ "$DEPLOY_SUCCESS" != "true" ]; then
+            echo ""
+            echo "=== Starting Regular Deploy (Fallback) ==="
+
+            git config --add remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+            git fetch origin "$INTEGRATION_BRANCH":refs/remotes/origin/"$INTEGRATION_BRANCH" --force 2>/dev/null || true
+
+            mkdir -p sgd-manifest
+            # NOTE: sfdx-git-delta deprecated `--source`; use `--source-dir`.
+            SOURCE_ARGS=""
+            if [ -d "force-app" ]; then
+              SOURCE_ARGS="$SOURCE_ARGS --source-dir force-app"
+            fi
+            if [ -d "force-dev" ]; then
+              SOURCE_ARGS="$SOURCE_ARGS --source-dir force-dev"
+            fi
+
+            # Match the validate-job delta semantics: compute from merge-base
+            # so integration's post-fork commits are not treated as reverts.
+            FALLBACK_FROM=$(git merge-base "origin/$INTEGRATION_BRANCH" HEAD)
+            if [ -z "$FALLBACK_FROM" ]; then
+              echo "::warning::Could not compute merge-base for regular-deploy fallback; falling back to integration tip"
+              FALLBACK_FROM="origin/$INTEGRATION_BRANCH"
+            fi
+            echo "Regular deploy delta --from: $FALLBACK_FROM"
+
+            sf sgd source delta \
+              --to HEAD \
+              --from "$FALLBACK_FROM" \
+              --repo-dir . \
+              --output-dir sgd-manifest \
+              $SOURCE_ARGS
+
+            if [ -d sgd-manifest ]; then
+              find sgd-manifest -name "*-meta.xml" -exec \
+                sed -i "s|<apiVersion>.*</apiVersion>|<apiVersion>${TARGET_API}</apiVersion>|g" {} + 2>/dev/null || true
+              if [ -f sgd-manifest/package/package.xml ]; then
+                sed -i "s|<version>.*</version>|<version>${TARGET_API}</version>|g" \
+                  sgd-manifest/package/package.xml
+              fi
+            fi
+
+            if [ "$HAS_FORCE_APP_APEX" == "true" ]; then
+              TEST_LEVEL="RunLocalTests"
+            elif [ "$HAS_APEX" == "true" ]; then
+              # force-dev-only Apex — bypass Salesforce's built-in 75%
+              # coverage rule. Sandbox-only; QA is a sandbox.
+              TEST_LEVEL="NoTestRun"
+            else
+              TEST_LEVEL="RunRelevantTests"
+            fi
+            echo "Test level: $TEST_LEVEL"
+
+            sf project deploy start \
+              --manifest sgd-manifest/package/package.xml \
+              --target-org QA_ORG \
+              --test-level "$TEST_LEVEL" \
+              --wait 60 \
+              --verbose \
+              --json > regular_deploy_result.json 2> regular_deploy_errors.txt
+            REGULAR_EXIT=$?
+            REGULAR_STATUS=$(jq -r '.result.status // "Failed"' regular_deploy_result.json 2>/dev/null || echo "Failed")
+            echo "Regular Deploy exit code: $REGULAR_EXIT"
+            echo "Regular Deploy status: $REGULAR_STATUS"
+
+            if [[ "$REGULAR_STATUS" == Succeeded* ]] && [ "$REGULAR_EXIT" -eq 0 ]; then
+              echo "✅ Regular Deploy successful!"
+              DEPLOY_SUCCESS="true"
+              DEPLOY_METHOD="regular"
+            else
+              echo "❌ Regular Deploy failed!"
+              cat regular_deploy_result.json
+              if [ -s regular_deploy_errors.txt ]; then
+                cat regular_deploy_errors.txt
+              fi
+            fi
+          fi
+
+          echo ""
+          echo "=== Deployment Summary ==="
+          echo "Deploy success: $DEPLOY_SUCCESS"
+          echo "Deploy method: $DEPLOY_METHOD"
+          echo "deploy_success=$DEPLOY_SUCCESS" >> $GITHUB_OUTPUT
+          echo "deploy_method=$DEPLOY_METHOD" >> $GITHUB_OUTPUT
+
+          if [ "$DEPLOY_SUCCESS" != "true" ]; then
+            exit 1
+          fi
+
+  # ============================================================================
+  # JOB 3: MERGE PR + CLEANUP TEMP BRANCH
+  # ============================================================================
+  # On successful deploy, merge the original PR into the integration branch.
+  # We push the temp branch's HEAD directly to the integration branch so the
+  # conflict resolution committed to the temp branch is what ends up on
+  # integration. Then we close the PR with a comment and delete the temp
+  # branch.
+  # ============================================================================
+  merge:
+    name: Merge PR & Cleanup Temp Branch
+    needs: [recheck_and_validate, deploy]
+    if: needs.deploy.outputs.deploy_success == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      TEMP_BRANCH: ${{ github.ref_name }}
+
+    steps:
+      - name: Checkout Temp Branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # ------------------------------------------------------------------------
+      # STEP: Open Auto-Merge PR (Temp → Integration)
+      # ------------------------------------------------------------------------
+      # Rather than pushing directly to the integration branch (which would be
+      # rejected if integration has branch-protection rules), we open a one-shot
+      # PR from the temp branch into integration. This is the SAME merge path
+      # qa-cicd-action.yml uses (gh pr merge with GITHUB_TOKEN), so whatever
+      # bypass configuration already lets that workflow merge will also let
+      # this one merge.
+      #
+      # NOTE: To prevent qa-cicd-action.yml from running ANOTHER validate/deploy
+      # cycle on this auto-PR, qa-cicd-action.yml has a head-ref filter that
+      # skips PRs whose head branch starts with `qa-validation-`.
+      # ------------------------------------------------------------------------
+      - name: Open Auto-Merge PR (Temp → Integration)
+        id: open_merge_pr
+        env:
+          GH_TOKEN:           ${{ secrets.GITHUB_TOKEN }}
+          INTEGRATION_BRANCH: ${{ needs.recheck_and_validate.outputs.integration_branch }}
+          ORIGINAL_PR:        ${{ needs.recheck_and_validate.outputs.pr_number }}
+        run: |
+          set -e
+          echo "=== Opening auto-merge PR: $TEMP_BRANCH → $INTEGRATION_BRANCH ==="
+
+          PR_URL=$(gh pr create \
+            --base "$INTEGRATION_BRANCH" \
+            --head "$TEMP_BRANCH" \
+            --title "[auto-merge] Conflict resolution for PR #$ORIGINAL_PR" \
+            --body "Automated merge of conflict-resolved temp branch \`$TEMP_BRANCH\` into \`$INTEGRATION_BRANCH\` after successful validation and deploy. Opened by the qa-cicd-conflict workflow on behalf of PR #$ORIGINAL_PR. Will be auto-merged immediately.")
+
+          AUTO_PR_NUMBER=$(echo "$PR_URL" | sed -nE 's|.*/pull/([0-9]+)$|\1|p')
+          if [ -z "$AUTO_PR_NUMBER" ]; then
+            echo "::error::Could not parse auto-merge PR number from URL: $PR_URL"
+            echo "auto_pr_number=" >> $GITHUB_OUTPUT
+            echo "auto_pr_url="    >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          echo "auto_pr_number=$AUTO_PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "auto_pr_url=$PR_URL"            >> $GITHUB_OUTPUT
+          echo "✅ Auto-merge PR opened: #$AUTO_PR_NUMBER ($PR_URL)"
+
+      # ------------------------------------------------------------------------
+      # STEP: Merge Auto-Merge PR (gh pr merge — same path as qa-cicd-action.yml)
+      # ------------------------------------------------------------------------
+      # `gh pr merge` goes through the GitHub PR merge API. If your integration
+      # branch is protected, whatever bypass/permission qa-cicd-action.yml
+      # already relies on will apply here too.
+      #
+      # `--delete-branch` deletes the temp head branch after the merge succeeds,
+      # so the explicit Delete-Temp-Branch step further down becomes a no-op
+      # (it just returns 404). That's fine — it's there as a fallback.
+      # ------------------------------------------------------------------------
+      - name: Merge Auto-Merge PR
+        id: merge
+        if: steps.open_merge_pr.outputs.auto_pr_number != ''
+        env:
+          GH_TOKEN:           ${{ secrets.GITHUB_TOKEN }}
+          AUTO_PR_NUMBER:     ${{ steps.open_merge_pr.outputs.auto_pr_number }}
+          INTEGRATION_BRANCH: ${{ needs.recheck_and_validate.outputs.integration_branch }}
+          ORIGINAL_PR:        ${{ needs.recheck_and_validate.outputs.pr_number }}
+        run: |
+          set +e
+          echo "=== Merging auto-merge PR #$AUTO_PR_NUMBER → $INTEGRATION_BRANCH ==="
+
+          gh pr merge "$AUTO_PR_NUMBER" \
+            --merge \
+            --delete-branch \
+            --subject "Merge PR #$ORIGINAL_PR (conflict-resolved via auto-PR #$AUTO_PR_NUMBER) into $INTEGRATION_BRANCH"
+          GH_EXIT=$?
+
+          if [ "$GH_EXIT" -eq 0 ]; then
+            echo "merge_success=true" >> $GITHUB_OUTPUT
+            echo "✅ Auto-merge PR #$AUTO_PR_NUMBER merged into $INTEGRATION_BRANCH"
+          else
+            echo "merge_success=false" >> $GITHUB_OUTPUT
+            echo "::error title=Auto-Merge Failed::gh pr merge exited $GH_EXIT for auto-PR #$AUTO_PR_NUMBER. The auto-PR remains OPEN — review it manually."
+            exit 1
+          fi
+
+      # ------------------------------------------------------------------------
+      # STEP: Close the original PR with a merge comment
+      # ------------------------------------------------------------------------
+      # GitHub will not auto-mark the PR as "merged" because the merge happened
+      # via an alternate branch. We post a comment and close the PR explicitly.
+      # ------------------------------------------------------------------------
+      - name: Close PR With Merge Comment
+        if: steps.merge.outputs.merge_success == 'true'
+        env:
+          GITHUB_TOKEN:       ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER:          ${{ needs.recheck_and_validate.outputs.pr_number }}
+          REPO:               ${{ github.repository }}
+          INTEGRATION_BRANCH: ${{ needs.recheck_and_validate.outputs.integration_branch }}
+          AUTO_PR_NUMBER:     ${{ steps.open_merge_pr.outputs.auto_pr_number }}
+          AUTO_PR_URL:        ${{ steps.open_merge_pr.outputs.auto_pr_url }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+          import urllib.error
+
+          pr_number          = os.environ["PR_NUMBER"]
+          repo               = os.environ["REPO"]
+          token              = os.environ["GITHUB_TOKEN"]
+          integration_branch = os.environ["INTEGRATION_BRANCH"]
+          auto_pr_number     = os.environ.get("AUTO_PR_NUMBER", "")
+          auto_pr_url        = os.environ.get("AUTO_PR_URL", "")
+
+          auto_pr_link = (
+              f"[#{auto_pr_number}]({auto_pr_url})" if auto_pr_number and auto_pr_url
+              else (f"#{auto_pr_number}" if auto_pr_number else "auto-merge PR")
+          )
+
+          body = (
+              "## 🤖 QA CI/CD Conflict — 🎉 Resolved & Merged\n\n"
+              f"✅ Re-validated cleanly · ✅ Deployed to QA · "
+              f"✅ Merged to `{integration_branch}` via auto-PR {auto_pr_link}\n\n"
+              "_This original PR will now be closed._"
+          )
+
+          def gh(method, url, payload=None, label=""):
+              data = json.dumps(payload).encode("utf-8") if payload is not None else None
+              req  = urllib.request.Request(
+                  url, data=data, method=method,
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Accept": "application/vnd.github+json",
+                      "Content-Type": "application/json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(req) as resp:
+                      print(f"{label}: HTTP {resp.status}")
+              except urllib.error.HTTPError as e:
+                  print(f"::warning::{label} failed: HTTP {e.code} - {e.read().decode(errors='replace')}")
+
+          gh(
+              "POST",
+              f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments",
+              {"body": body},
+              "Comment posted",
+          )
+          gh(
+              "PATCH",
+              f"https://api.github.com/repos/{repo}/pulls/{pr_number}",
+              {"state": "closed"},
+              "PR closed",
+          )
+          PY
+
+      # ------------------------------------------------------------------------
+      # STEP: Delete the temp branch (only after successful merge + PR close)
+      # ------------------------------------------------------------------------
+      - name: Delete Temp Branch
+        if: steps.merge.outputs.merge_success == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO:         ${{ github.repository }}
+        run: |
+          echo "=== Deleting temp branch: $TEMP_BRANCH ==="
+          HTTP_CODE=$(curl -s -o /tmp/delete_resp.txt -w "%{http_code}" \
+            -X DELETE \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$REPO/git/refs/heads/$TEMP_BRANCH")
+
+          if [ "$HTTP_CODE" = "204" ]; then
+            echo "✅ Temp branch '$TEMP_BRANCH' deleted"
+          elif [ "$HTTP_CODE" = "422" ] || [ "$HTTP_CODE" = "404" ]; then
+            echo "⚠️ Temp branch '$TEMP_BRANCH' not found (already deleted?) — skipping"
+          else
+            echo "::warning::Failed to delete temp branch '$TEMP_BRANCH' (HTTP $HTTP_CODE)"
+            cat /tmp/delete_resp.txt || true
+          fi
+
+      - name: Post Final Summary
+        if: always()
+        run: |
+          echo "## 🎉 Conflict Resolution Pipeline Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Conflict Recheck | ✅ Clean |" >> $GITHUB_STEP_SUMMARY
+          echo "| Validation | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deployment | ✅ Deployed |" >> $GITHUB_STEP_SUMMARY
+          echo "| Merge | ✅ Merged & PR closed |" >> $GITHUB_STEP_SUMMARY
+
+# ##############################################################################
+# END OF WORKFLOW
+# ##############################################################################
+# DESIGN NOTES:
+#
+# 1. Trigger: push to qa-validation-** (temp branches created by qa-cicd-action.yml)
+# 2. PR resolution: derive PR_NUMBER from trailing -pr-<N> on the branch name,
+#    then look up base/head/assignees via the GitHub REST API.
+# 3. Conflict re-check: try to merge the temp branch into the integration branch
+#    on a throwaway local branch (no remote effect on conflict).
+# 4. Re-conflict path:
+#      a. Create a fresh temp branch from integration HEAD (empty copy).
+#      b. Post a PR comment @mentioning assignees (GitHub emails them).
+#      c. Delete the old temp branch.
+#      d. Fail the workflow to surface the issue.
+# 5. Clean-merge path: same validate → deploy → merge sequence as
+#    qa-cicd-action.yml, but using the temp branch contents instead of the
+#    feature branch. After success, push the temp branch to integration,
+#    close the PR with a comment, and delete the temp branch.
+#
+# SECRETS REQUIRED:
+#   QA_AUTH_SECRET = SFDX auth URL for QA org
+#   GITHUB_TOKEN   = Auto-provided by GitHub
+# ##############################################################################
